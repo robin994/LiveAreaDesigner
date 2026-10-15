@@ -6,6 +6,32 @@ A lightweight native SDL2 homebrew for prototyping PS Vita LiveArea card and but
 
 **Download:** [GitHub releases](https://github.com/robin994/LiveAreaDesigner/releases) (download `LIVAREA01.vpk` from the v1.11 release assets).
 
+## Web editor — GitHub Pages
+
+**[Open LiveArea Designer online](https://robin994.github.io/LiveAreaDesigner/)**
+
+The static web edition in [`docs/`](docs/) offers the same core layout functionality as the PS Vita homebrew:
+
+- Canvas preview at **960 × 544**, with the sample card at **840 × 480** and a draggable/resizable button.
+- Accurate card-relative **X, Y, W, H**, plus derived right/bottom offsets.
+- Keyboard arrows for 1 px steps (hold **Shift** for 10 px); choose **Move** or **Resize**.
+- Native browser file selection or drag-and-drop for independent PNG/JPG card and button images (maximum 12 MB and 2048 × 2048 pixels each).
+- Independent 10-color palettes for card and button; live preview.
+- Automatic persistence of geometry/colors to browser storage, and imported image blobs to IndexedDB.
+- Additional web features: export a clean 960 × 544 PNG preview and copy coordinate values.
+
+The site has **no backend** and does **not upload images**. Browsers can only open files explicitly chosen by the user, unlike the Vita's on-device file browser. Browser-local settings are not automatically synchronized to the native homebrew or to other devices. Use a modern desktop or mobile browser; the PS Vita's built-in browser is not a supported target.
+
+The static site is published from `main` / `docs` using GitHub Pages, with no npm dependencies or build step.
+
+Web tests:
+
+```sh
+node --test tests/web-geometry.test.mjs
+# Optional full browser smoke test with local Google Chrome:
+node tests/web-browser-smoke.mjs
+```
+
 This is a visual editor/simulator, **not** a tool that installs or modifies system LiveArea layouts. The example card geometry is provisional and layout/XML export is not implemented yet.
 
 ## Installation
