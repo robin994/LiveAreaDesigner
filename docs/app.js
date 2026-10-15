@@ -58,9 +58,9 @@ function savePreferences() {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
       layout: state.layout, mode: state.mode, guides: state.guides
     }));
-    status("Salvato nel browser");
+    status("Saved in this browser");
   } catch {
-    status("Salvataggio non disponibile", false);
+    status("Local storage unavailable", false);
   }
 }
 
@@ -120,14 +120,14 @@ function imageDimensions(file, name) {
           image.naturalWidth > MAX_IMAGE_EDGE ||
           image.naturalHeight > MAX_IMAGE_EDGE) {
         URL.revokeObjectURL(objectUrl);
-        reject(new Error("Dimensioni massime: 2048 × 2048 pixel."));
+        reject(new Error("Maximum image dimensions: 2048 × 2048 pixels."));
         return;
       }
       resolve({ image, url: objectUrl, blob: file, name });
     };
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error("Impossibile leggere l'immagine PNG/JPG."));
+      reject(new Error("Unable to read the PNG or JPG image."));
     };
     image.src = objectUrl;
   });
@@ -135,9 +135,9 @@ function imageDimensions(file, name) {
 
 async function validateFile(file) {
   if (!file || file.size <= 0 || file.size > MAX_IMAGE_BYTES)
-    throw new Error("Il file deve essere inferiore a 12 MB.");
+    throw new Error("The file must be 12 MiB or smaller.");
   if (!/\.(png|jpe?g)$/i.test(file.name))
-    throw new Error("Sono supportati soltanto i file PNG, JPG e JPEG.");
+    throw new Error("Only PNG, JPG, and JPEG files are supported.");
 
   // Check signatures instead of trusting the extension or the MIME type alone.
   const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
@@ -146,7 +146,7 @@ async function validateFile(file) {
   const jpeg = bytes.length >= 3 &&
     bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   if (!png && !jpeg)
-    throw new Error("Il contenuto del file non è un PNG o JPG valido.");
+    throw new Error("The file does not contain a valid PNG or JPG image.");
 }
 
 function replaceImage(target, loaded) {
@@ -166,15 +166,15 @@ async function chooseImage(target, file) {
     replaceImage(target, loaded);
     try {
       await assetOperation("put", target, { blob: file, name: file.name });
-      status("Salvato nel browser");
-      notice(`Immagine ${target === "card" ? "card" : "pulsante"} caricata e salvata.`);
+      status("Saved in this browser");
+      notice(`${target === "card" ? "Card" : "Button"} image uploaded and saved locally.`);
     } catch {
-      status("Immagine solo per questa sessione", false);
-      notice("Immagine caricata; il browser non consente di salvarla in modo permanente.");
+      status("Image available for this session only", false);
+      notice("Image loaded, but your browser could not save it for future visits.");
     }
   } catch (error) {
     if (loaded && state.images[target] !== loaded) URL.revokeObjectURL(loaded.url);
-    notice(error.message || "Impossibile caricare questa immagine.");
+    notice(error.message || "Unable to load this image.");
   }
 }
 
@@ -182,11 +182,11 @@ async function clearImage(target) {
   replaceImage(target, null);
   try {
     await assetOperation("delete", target);
-    status("Salvato nel browser");
-    notice(`Immagine ${target === "card" ? "card" : "pulsante"} rimossa.`);
+    status("Saved in this browser");
+    notice(`${target === "card" ? "Card" : "Button"} image removed.`);
   } catch {
-    status("Salvataggio non disponibile", false);
-    notice("Immagine rimossa dall'anteprima; impossibile aggiornare la memoria locale.");
+    status("Local storage unavailable", false);
+    notice("Image removed from the preview, but the saved copy could not be deleted.");
   }
 }
 
@@ -199,7 +199,7 @@ async function restoreImages() {
       const loaded = await imageDimensions(saved.blob, saved.name);
       replaceImage(target, loaded);
     } catch (error) {
-      console.warn(`Immagine salvata per ${target} non disponibile:`, error);
+      console.warn(`Saved ${target} image is unavailable:`, error);
     }
   }
 }
@@ -212,8 +212,8 @@ function updateAssetUI(target) {
   thumb.style.backgroundColor = color;
   thumb.style.backgroundImage = image ? `url("${image.url}")` : "none";
   thumb.querySelector(".asset-thumb-icon").style.visibility = image ? "hidden" : "visible";
-  filename.textContent = image ? image.name : "Nessuna immagine";
-  filename.title = image ? image.name : "Nessuna immagine";
+  filename.textContent = image ? image.name : "No image selected";
+  filename.title = image ? image.name : "No image selected";
   document.getElementById(`${target}-clear`).disabled = !image;
 }
 
@@ -225,7 +225,7 @@ function buildPalette(target) {
     button.className = "swatch";
     button.style.backgroundColor = color.hex;
     button.title = `${color.name} (${color.hex})`;
-    button.setAttribute("aria-label", `Seleziona ${color.name} per ${target === "card" ? "card" : "pulsante"}`);
+    button.setAttribute("aria-label", `Select ${color.name} for the ${target === "card" ? "card" : "button"}`);
     button.dataset.index = String(index);
     button.addEventListener("click", () => {
       setLayout({ ...state.layout, [target === "card" ? "cardColor" : "buttonColor"]: index });
@@ -461,7 +461,7 @@ function downloadImage() {
   const context = output.getContext("2d");
   drawScene(context, { guides: false, hud: false });
   output.toBlob(blob => {
-    if (!blob) { notice("Impossibile esportare l'anteprima."); return; }
+    if (!blob) { notice("Unable to export the preview."); return; }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -470,7 +470,7 @@ function downloadImage() {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
-    notice("Anteprima PNG esportata.");
+    notice("PNG preview exported.");
   }, "image/png");
 }
 
@@ -480,7 +480,7 @@ async function copyCoordinates() {
   const text = `X=${x}, Y=${y}, W=${w}, H=${h}, RIGHT=${right}, BOTTOM=${bottom}`;
   try {
     await navigator.clipboard.writeText(text);
-    notice("Coordinate copiate.");
+    notice("Coordinates copied.");
   } catch {
     // Copy still works on some older browsers without the Clipboard API.
     const textarea = document.createElement("textarea");
@@ -491,7 +491,7 @@ async function copyCoordinates() {
     textarea.select();
     const succeeded = document.execCommand("copy");
     textarea.remove();
-    notice(succeeded ? "Coordinate copiate." : "Clipboard non disponibile su questo browser.");
+    notice(succeeded ? "Coordinates copied." : "Clipboard access is unavailable in this browser.");
   }
 }
 
@@ -508,7 +508,7 @@ function bindEditor() {
   elements.reset.addEventListener("click", () => {
     const { cardColor, buttonColor } = state.layout;
     setLayout({ ...DEFAULT_LAYOUT, cardColor, buttonColor });
-    notice("Posizione e dimensioni ripristinate.");
+    notice("Position and dimensions reset.");
   });
 
   for (const [key, input] of Object.entries(fields)) {
@@ -620,7 +620,7 @@ if (ctx) {
   scheduleDraw();
   restoreImages();
 } else {
-  notice("Il tuo browser non supporta Canvas 2D.");
+  notice("Your browser does not support Canvas 2D.");
 }
 
 window.addEventListener("pagehide", () => {

@@ -142,11 +142,23 @@ try {
   await waitFor(() => evaluate("document.querySelectorAll('.swatch').length === 20"), "palette initialization");
   let pageState = await evaluate(`({
     title: document.title,
+    lang: document.documentElement.lang,
+    heading: document.querySelector("h1").textContent,
+    download: document.querySelector(".download-link").textContent.trim(),
+    export: document.querySelector("#export-preview").textContent.trim(),
+    settings: document.querySelector("#settings-heading").textContent.trim(),
+    paletteLabel: document.querySelector('#card-palette .swatch[data-index="0"]').getAttribute("aria-label"),
     width: document.querySelector("#preview").width,
     height: document.querySelector("#preview").height,
     x: document.querySelector("#measure-x").textContent,
     right: document.querySelector("#measure-right").textContent
   })`);
+  assert.equal(pageState.lang, "en");
+  assert.match(pageState.heading, /Your LiveArea.*Pixel perfect\./);
+  assert.equal(pageState.download, "Download VPK");
+  assert.equal(pageState.export, "Export PNG Preview");
+  assert.equal(pageState.settings, "Settings");
+  assert.equal(pageState.paletteLabel, "Select Purple for the card");
   assert.equal(pageState.width, 960);
   assert.equal(pageState.height, 544);
   assert.equal(pageState.x, "276");
@@ -220,7 +232,7 @@ try {
   await waitFor(() => evaluate('document.querySelectorAll(".swatch").length === 20'), "page reload");
   await waitFor(() => evaluate('document.getElementById("card-filename").textContent === "web-test-card.png"'), "persisted image restoration");
   assert.equal(await evaluate('document.getElementById("measure-w").textContent'), "328");
-  assert.equal(await evaluate('document.getElementById("card-color-name").textContent'), "Verde");
+  assert.equal(await evaluate('document.getElementById("card-color-name").textContent'), "Green");
   console.log("PASS: geometry, colors, and images persist after reload");
 
   await screenshot("desktop.png");
@@ -246,7 +258,8 @@ try {
   console.log("PASS: mobile layout without horizontal overflow");
 
   await evaluate('document.querySelector("#card-clear").click()');
-  await waitFor(() => evaluate('document.getElementById("card-filename").textContent === "Nessuna immagine"'), "asset removal");
+  await waitFor(() => evaluate('document.getElementById("card-filename").textContent === "No image selected"'), "asset removal");
+  await waitFor(() => evaluate('document.getElementById("toast").textContent === "Card image removed."'), "English removal message");
   assert.deepEqual(errors, [], "No uncaught browser runtime errors");
   console.log("PASS: image removal; no JavaScript runtime errors");
   console.log("Screenshots written to:", output);

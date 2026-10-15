@@ -3,16 +3,16 @@ export const CARD = Object.freeze({ x: 60, y: 44, width: 840, height: 480 });
 export const MIN_BUTTON_SIZE = 24;
 
 export const PALETTE = Object.freeze([
-  { name: "Viola", hex: "#71009e" },
+  { name: "Purple", hex: "#71009e" },
   { name: "Magenta", hex: "#e014d0" },
-  { name: "Blu", hex: "#206abe" },
-  { name: "Ciano", hex: "#1aaddd" },
-  { name: "Verde", hex: "#1e9e69" },
-  { name: "Giallo", hex: "#f7cb3a" },
-  { name: "Arancione", hex: "#f58f37" },
-  { name: "Rosso", hex: "#d53c5a" },
-  { name: "Bianco", hex: "#e6e4f0" },
-  { name: "Ardesia", hex: "#384155" }
+  { name: "Blue", hex: "#206abe" },
+  { name: "Cyan", hex: "#1aaddd" },
+  { name: "Green", hex: "#1e9e69" },
+  { name: "Yellow", hex: "#f7cb3a" },
+  { name: "Orange", hex: "#f58f37" },
+  { name: "Red", hex: "#d53c5a" },
+  { name: "White", hex: "#e6e4f0" },
+  { name: "Slate", hex: "#384155" }
 ]);
 
 export const DEFAULT_LAYOUT = Object.freeze({

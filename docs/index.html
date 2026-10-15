@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0a101d">
-  <meta name="description" content="LiveArea Designer: posiziona, ridimensiona e personalizza card e pulsanti LiveArea per PlayStation Vita direttamente nel browser.">
+  <meta name="description" content="LiveArea Designer: design PlayStation Vita LiveArea cards and buttons in your browser with pixel-accurate positioning, custom images, and colors.">
   <title>LiveArea Designer — PS Vita LiveArea Editor</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,7 +18,7 @@
   <div class="ambient ambient-two" aria-hidden="true"></div>
 
   <header class="topbar">
-    <a class="brand" href="./" aria-label="LiveArea Designer, pagina principale">
+    <a class="brand" href="./" aria-label="LiveArea Designer, home">
       <span class="brand-mark" aria-hidden="true"><span></span><span></span></span>
       <span class="brand-name">LIVEAREA <strong>DESIGNER</strong><small>PS VITA DESIGN TOOL</small></span>
     </a>
@@ -29,7 +29,7 @@
       </a>
       <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.11" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 17v3h16v-3"/></svg>
-        Scarica VPK
+        Download VPK
       </a>
     </div>
   </header>
@@ -38,13 +38,13 @@
     <div class="intro">
       <div>
         <div class="eyebrow"><span class="eyebrow-line"></span> WORKSPACE / 001 <span class="eyebrow-bullet"></span> PLAYSTATION VITA</div>
-        <h1>La tua LiveArea.<br><em>Al pixel.</em></h1>
-        <p>Progetta card e pulsanti, carica le tue immagini e definisci ogni distanza con precisione. Tutto in tempo reale, direttamente dal browser.</p>
+        <h1>Your LiveArea.<br><em>Pixel perfect.</em></h1>
+        <p>Design cards and buttons, import your own images, and fine-tune every offset. See every change in real time, right in your browser.</p>
       </div>
-      <div class="intro-facts" aria-label="Specifiche del simulatore">
-        <div class="fact"><span>RISOLUZIONE</span><strong>960 <i>×</i> 544</strong></div>
-        <div class="fact"><span>AREA CARD</span><strong>840 <i>×</i> 480</strong></div>
-        <div class="fact"><span>UNITÀ</span><strong>PIXEL / PX</strong></div>
+      <div class="intro-facts" aria-label="Simulator specifications">
+        <div class="fact"><span>RESOLUTION</span><strong>960 <i>×</i> 544</strong></div>
+        <div class="fact"><span>CARD AREA</span><strong>840 <i>×</i> 480</strong></div>
+        <div class="fact"><span>UNITS</span><strong>PIXELS / PX</strong></div>
       </div>
     </div>
 
@@ -52,10 +52,10 @@
       <section class="editor-column" aria-labelledby="preview-heading">
         <div class="section-head">
           <div>
-            <div class="overline">01 / SIMULATORE</div>
-            <h2 id="preview-heading">Anteprima LiveArea <span class="section-count">01</span></h2>
+            <div class="overline">01 / SIMULATOR</div>
+            <h2 id="preview-heading">LiveArea Preview <span class="section-count">01</span></h2>
           </div>
-          <div class="hint-pill"><span class="pulse"></span> AGGIORNAMENTO LIVE</div>
+          <div class="hint-pill"><span class="pulse"></span> LIVE UPDATES</div>
         </div>
 
         <div class="preview-shell">
@@ -63,22 +63,22 @@
             <div class="screen-name">
               <span class="tiny-square" aria-hidden="true"></span> PS VITA / SCREEN PREVIEW
             </div>
-            <div class="mode-control" role="group" aria-label="Modalità modifica">
+            <div class="mode-control" role="group" aria-label="Editing mode">
               <button id="mode-move" class="mode-button is-active" type="button" aria-pressed="true">
-                <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.9" aria-hidden="true"><path d="M12 2v20m0-20L9 5m3-3 3 3m-3 17-3-3m3 3 3-3M2 12h20M2 12l3-3m-3 3 3 3m17-3-3-3m3 3-3 3"/></svg>Sposta
+                <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.9" aria-hidden="true"><path d="M12 2v20m0-20L9 5m3-3 3 3m-3 17-3-3m3 3 3-3M2 12h20M2 12l3-3m-3 3 3 3m17-3-3-3m3 3-3 3"/></svg>Move
               </button>
               <button id="mode-resize" class="mode-button" type="button" aria-pressed="false">
-                <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.9" aria-hidden="true"><path d="M4 15V4h11M9 20h11V9m-7 1 7-6m-7 6h6V4"/></svg>Ridimensiona
+                <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.9" aria-hidden="true"><path d="M4 15V4h11M9 20h11V9m-7 1 7-6m-7 6h6V4"/></svg>Resize
               </button>
             </div>
-            <button id="toggle-guides" type="button" class="guides-button is-active" aria-pressed="true" title="Mostra o nascondi le guide">
+            <button id="toggle-guides" type="button" class="guides-button is-active" aria-pressed="true" title="Show or hide guides">
               <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.7" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h18M7 3v18M12 3v18M17 3v18"/></svg>
-              Guide
+              Guides
             </button>
           </div>
           <div class="canvas-wrap">
-            <canvas id="preview" width="960" height="544" tabindex="0" aria-label="Simulazione PS Vita a 960 per 544 pixel. Trascina il rettangolo per spostarlo; trascina la maniglia gialla in basso a destra per ridimensionarlo.">
-              Questo browser non supporta Canvas.
+            <canvas id="preview" width="960" height="544" tabindex="0" aria-label="PlayStation Vita preview at 960 by 544 pixels. Drag the button to move it; drag the yellow bottom-right handle to resize it.">
+              Your browser does not support Canvas.
             </canvas>
             <span class="screen-corner screen-corner-tl" aria-hidden="true"></span>
             <span class="screen-corner screen-corner-tr" aria-hidden="true"></span>
@@ -86,109 +86,109 @@
             <span class="screen-corner screen-corner-br" aria-hidden="true"></span>
           </div>
           <div class="preview-bottom">
-            <div class="help-copy"><span class="pointer-symbol" aria-hidden="true">↗</span> Trascina il pulsante per spostarlo; usa la maniglia gialla per ridimensionarlo.</div>
-            <span class="keyboard-tip">FRECCE <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> <small>SHIFT × 10</small></span>
+            <div class="help-copy"><span class="pointer-symbol" aria-hidden="true">↗</span> Drag the button to move it; use the yellow handle to resize it.</div>
+            <span class="keyboard-tip">ARROWS <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> <small>SHIFT × 10</small></span>
           </div>
         </div>
 
-        <div class="measurements" aria-label="Misure attuali in pixel">
-          <div class="measurement"><span>POSIZIONE X</span><div><strong id="measure-x">276</strong><small>px</small></div></div>
-          <div class="measurement"><span>POSIZIONE Y</span><div><strong id="measure-y">112</strong><small>px</small></div></div>
-          <div class="measurement"><span>LARGHEZZA</span><div><strong id="measure-w">286</strong><small>px</small></div></div>
-          <div class="measurement"><span>ALTEZZA</span><div><strong id="measure-h">168</strong><small>px</small></div></div>
-          <div class="measurement"><span>MARGINE DX</span><div><strong id="measure-right">278</strong><small>px</small></div></div>
-          <div class="measurement"><span>MARGINE INF</span><div><strong id="measure-bottom">200</strong><small>px</small></div></div>
+        <div class="measurements" aria-label="Current measurements in pixels">
+          <div class="measurement"><span>POSITION X</span><div><strong id="measure-x">276</strong><small>px</small></div></div>
+          <div class="measurement"><span>POSITION Y</span><div><strong id="measure-y">112</strong><small>px</small></div></div>
+          <div class="measurement"><span>WIDTH</span><div><strong id="measure-w">286</strong><small>px</small></div></div>
+          <div class="measurement"><span>HEIGHT</span><div><strong id="measure-h">168</strong><small>px</small></div></div>
+          <div class="measurement"><span>RIGHT OFFSET</span><div><strong id="measure-right">278</strong><small>px</small></div></div>
+          <div class="measurement"><span>BOTTOM OFFSET</span><div><strong id="measure-bottom">200</strong><small>px</small></div></div>
         </div>
 
         <div class="editor-actions">
           <button id="export-preview" class="action-primary" type="button">
             <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 17v3h14v-3"/></svg>
-            Esporta anteprima PNG
+            Export PNG Preview
           </button>
           <button id="copy-coordinates" class="action-secondary" type="button">
             <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.7" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>
-            Copia coordinate
+            Copy Coordinates
           </button>
-          <button id="reset-geometry" class="action-reset" type="button">Ripristina posizione <span aria-hidden="true">↺</span></button>
+          <button id="reset-geometry" class="action-reset" type="button">Reset Position <span aria-hidden="true">↺</span></button>
         </div>
       </section>
 
       <aside class="inspector" aria-labelledby="settings-heading">
         <div class="inspector-header">
-          <div class="overline">02 / PERSONALIZZA</div>
+          <div class="overline">02 / CUSTOMIZE</div>
           <div class="inspector-title-row">
-            <h2 id="settings-heading">Impostazioni</h2>
+            <h2 id="settings-heading">Settings</h2>
             <span class="inspector-glyph" aria-hidden="true">⚙</span>
           </div>
-          <p>Ogni modifica è visibile nell'anteprima.</p>
+          <p>Every change appears instantly in the preview.</p>
         </div>
 
         <section class="inspector-section" aria-labelledby="assets-title">
-          <div class="subhead"><span class="sub-number">01</span><h3 id="assets-title">Immagini</h3><span class="sub-rule"></span></div>
+          <div class="subhead"><span class="sub-number">01</span><h3 id="assets-title">Images</h3><span class="sub-rule"></span></div>
           <div class="asset-card" id="card-drop">
             <div class="asset-topline">
               <div class="asset-thumb" id="card-thumb"><span class="asset-thumb-icon" aria-hidden="true">▧</span></div>
-              <div class="asset-name"><strong>Card</strong><span id="card-filename" title="Nessun file selezionato">Nessuna immagine</span></div>
+              <div class="asset-name"><strong>Card</strong><span id="card-filename" title="No file selected">No image selected</span></div>
               <span class="asset-tag">840 × 480</span>
             </div>
             <div class="asset-buttons">
-              <button type="button" class="asset-upload" id="card-upload">+ Carica PNG / JPG</button>
-              <button type="button" class="asset-clear" id="card-clear" aria-label="Rimuovi immagine card">Rimuovi</button>
+              <button type="button" class="asset-upload" id="card-upload">+ Upload PNG / JPG</button>
+              <button type="button" class="asset-clear" id="card-clear" aria-label="Remove card image">Remove</button>
             </div>
             <input id="card-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
           </div>
           <div class="asset-card" id="button-drop">
             <div class="asset-topline">
               <div class="asset-thumb" id="button-thumb"><span class="asset-thumb-icon" aria-hidden="true">▣</span></div>
-              <div class="asset-name"><strong>Pulsante</strong><span id="button-filename" title="Nessun file selezionato">Nessuna immagine</span></div>
-              <span class="asset-tag">ADATTIVA</span>
+              <div class="asset-name"><strong>Button</strong><span id="button-filename" title="No file selected">No image selected</span></div>
+              <span class="asset-tag">SCALABLE</span>
             </div>
             <div class="asset-buttons">
-              <button type="button" class="asset-upload" id="button-upload">+ Carica PNG / JPG</button>
-              <button type="button" class="asset-clear" id="button-clear" aria-label="Rimuovi immagine pulsante">Rimuovi</button>
+              <button type="button" class="asset-upload" id="button-upload">+ Upload PNG / JPG</button>
+              <button type="button" class="asset-clear" id="button-clear" aria-label="Remove button image">Remove</button>
             </div>
             <input id="button-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
           </div>
-          <p class="section-note">Trascina qui i file oppure selezionali dal dispositivo. PNG trasparenti supportati; max 2048 × 2048 px e 12 MB.</p>
+          <p class="section-note">Drag and drop files here, or select them from your device. Transparent PNGs supported; up to 2048 × 2048 px and 12 MiB per image.</p>
         </section>
 
         <section class="inspector-section" aria-labelledby="colors-title">
-          <div class="subhead"><span class="sub-number">02</span><h3 id="colors-title">Colori predefiniti</h3><span class="sub-rule"></span></div>
+          <div class="subhead"><span class="sub-number">02</span><h3 id="colors-title">Preset Colors</h3><span class="sub-rule"></span></div>
           <div class="palette-group">
-            <div class="palette-heading"><label id="palette-card-label">Sfondo card</label><output id="card-color-name">Viola</output></div>
+            <div class="palette-heading"><label id="palette-card-label">Card background</label><output id="card-color-name">Purple</output></div>
             <div class="swatches" id="card-palette" role="group" aria-labelledby="palette-card-label"></div>
           </div>
           <div class="palette-group">
-            <div class="palette-heading"><label id="palette-button-label">Sfondo pulsante</label><output id="button-color-name">Magenta</output></div>
+            <div class="palette-heading"><label id="palette-button-label">Button background</label><output id="button-color-name">Magenta</output></div>
             <div class="swatches" id="button-palette" role="group" aria-labelledby="palette-button-label"></div>
           </div>
-          <p class="section-note">Il colore rimane visibile sotto le aree trasparenti delle immagini.</p>
+          <p class="section-note">The selected background color shows through transparent areas of an image.</p>
         </section>
 
         <section class="inspector-section inspector-geometry" aria-labelledby="geometry-title">
-          <div class="subhead"><span class="sub-number">03</span><h3 id="geometry-title">Geometria</h3><span class="sub-rule"></span></div>
-          <p class="geometry-caption">Coordinate relative al bordo superiore sinistro della card.</p>
+          <div class="subhead"><span class="sub-number">03</span><h3 id="geometry-title">Geometry</h3><span class="sub-rule"></span></div>
+          <p class="geometry-caption">Coordinates are relative to the card's top-left corner.</p>
           <div class="geometry-inputs">
-            <label class="field"><span>X <small>ORIZZONTALE</small></span><div class="input-container"><input id="input-x" type="number" min="0" max="816" step="1" inputmode="numeric" value="276"><span>px</span></div></label>
-            <label class="field"><span>Y <small>VERTICALE</small></span><div class="input-container"><input id="input-y" type="number" min="0" max="456" step="1" inputmode="numeric" value="112"><span>px</span></div></label>
-            <label class="field"><span>W <small>LARGHEZZA</small></span><div class="input-container"><input id="input-w" type="number" min="24" max="840" step="1" inputmode="numeric" value="286"><span>px</span></div></label>
-            <label class="field"><span>H <small>ALTEZZA</small></span><div class="input-container"><input id="input-h" type="number" min="24" max="480" step="1" inputmode="numeric" value="168"><span>px</span></div></label>
+            <label class="field"><span>X <small>HORIZONTAL</small></span><div class="input-container"><input id="input-x" type="number" min="0" max="816" step="1" inputmode="numeric" value="276"><span>px</span></div></label>
+            <label class="field"><span>Y <small>VERTICAL</small></span><div class="input-container"><input id="input-y" type="number" min="0" max="456" step="1" inputmode="numeric" value="112"><span>px</span></div></label>
+            <label class="field"><span>W <small>WIDTH</small></span><div class="input-container"><input id="input-w" type="number" min="24" max="840" step="1" inputmode="numeric" value="286"><span>px</span></div></label>
+            <label class="field"><span>H <small>HEIGHT</small></span><div class="input-container"><input id="input-h" type="number" min="24" max="480" step="1" inputmode="numeric" value="168"><span>px</span></div></label>
           </div>
           <div class="derived-coordinates">
-            <div><span>DISTANZA DESTRA</span><strong><output id="offset-right">278</output> <small>px</small></strong></div>
-            <div><span>DISTANZA INFERIORE</span><strong><output id="offset-bottom">200</output> <small>px</small></strong></div>
+            <div><span>RIGHT OFFSET</span><strong><output id="offset-right">278</output> <small>px</small></strong></div>
+            <div><span>BOTTOM OFFSET</span><strong><output id="offset-bottom">200</output> <small>px</small></strong></div>
           </div>
         </section>
         <div class="storage-note">
-          <div class="storage-indicator"><span class="storage-light"></span><strong id="storage-status">Salvato nel browser</strong></div>
-          <p>Progetto salvato solo su questo dispositivo. Le immagini non vengono inviate a nessun server.</p>
+          <div class="storage-indicator"><span class="storage-light"></span><strong id="storage-status">Saved in this browser</strong></div>
+          <p>Your project is stored on this device only. Images are never uploaded to a server.</p>
         </div>
       </aside>
     </div>
 
     <div class="page-footnote">
-      <span><span class="footnote-marker"></span> UN PROGETTO OPEN SOURCE <strong>by robin994</strong></span>
-      <span>Questo è un simulatore visuale, non modifica la LiveArea di sistema né esporta XML. <a href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">Sorgenti e licenza MIT ↗</a></span>
+      <span><span class="footnote-marker"></span> AN OPEN-SOURCE PROJECT <strong>by robin994</strong></span>
+      <span>This is a visual simulator; it does not modify the system LiveArea or export XML. <a href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">Source code and MIT license ↗</a></span>
     </div>
   </main>
 
