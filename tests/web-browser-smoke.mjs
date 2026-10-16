@@ -166,6 +166,80 @@ try {
   assert.equal(pageState.right, "278");
   console.log("PASS: desktop initialization and native dimensions");
 
+  const originalXml = await evaluate(`(async () => {
+    const { generateTemplate } = await import("./template.mjs");
+    const { DEFAULT_LAYOUT } = await import("./geometry.mjs");
+    const p = JSON.parse(localStorage.getItem("livearea-designer-web-v1")) ??
+      { layout: DEFAULT_LAYOUT, frameLayouts: {} };
+    return generateTemplate(p.layout, p.frameLayouts);
+  })()`);
+  const originalPixels = await evaluate(`(() => {
+    const saved = JSON.parse(localStorage.getItem("livearea-designer-web-v1"));
+    const l = saved?.layout ?? { x: 276, y: 112 };
+    return { x: l.x, y: l.y };
+  })()`);
+  await evaluate('document.getElementById("invert-x").click()');
+  await waitFor(() => evaluate('document.getElementById("measure-x").textContent === "1"'),
+    "invert X only");
+  assert.equal(await evaluate('document.getElementById("measure-y").textContent'), "54");
+  await evaluate('document.getElementById("invert-y").click()');
+  await waitFor(() => evaluate('document.getElementById("measure-y").textContent === "-54"'),
+    "invert Y independently");
+  assert.equal(await evaluate('document.getElementById("input-x").value'), "1");
+  assert.equal(await evaluate('document.getElementById("input-y").value'), "-54");
+  assert.match(await evaluate('document.getElementById("axis-y-direction").textContent'),
+    /UP.*DOWN/);
+  assert.deepEqual(await evaluate(`(() => {
+    const p = JSON.parse(localStorage.getItem("livearea-designer-web-v1"));
+    return { x: p.layout.x, y: p.layout.y };
+  })()`), originalPixels, "Switching signs does not move the image");
+  assert.equal(await evaluate(`(async () => {
+    const { generateTemplate } = await import("./template.mjs");
+    const p = JSON.parse(localStorage.getItem("livearea-designer-web-v1"));
+    return generateTemplate(p.layout, p.frameLayouts);
+  })()`), originalXml, "Editor sign preferences do not alter template.xml");
+
+  await send("Page.reload", { ignoreCache: true });
+  await waitFor(() => evaluate('document.getElementById("invert-x").checked && document.getElementById("invert-y").checked'),
+    "independent sign preferences survive reload");
+  assert.equal(await evaluate('document.getElementById("measure-y").textContent'), "-54");
+  await evaluate(`(() => {
+    const x = document.getElementById("input-x");
+    const y = document.getElementById("input-y");
+    x.value = "-100";
+    x.dispatchEvent(new Event("input", { bubbles: true }));
+    y.value = "30";
+    y.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate(
+    'document.getElementById("measure-x").textContent === "-100" && document.getElementById("measure-y").textContent === "30"'
+  ), "inverted numeric inputs update the underlying position");
+  const movedPixels = await evaluate(`(() => {
+    const l = JSON.parse(localStorage.getItem("livearea-designer-web-v1")).layout;
+    return { x: l.x, y: l.y };
+  })()`);
+  assert.deepEqual(movedPixels, { x: 377, y: 196 });
+  const copied = await evaluate(`(async () => {
+    let lastCopied = "";
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true, value: { writeText: async value => { lastCopied = value; } }
+    });
+    document.getElementById("copy-coordinates").click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    return lastCopied;
+  })()`);
+  assert.match(copied, /^X=-100, Y=30, W=286, H=168,/,
+    "Copy Coordinates must honor the selected display signs");
+  await evaluate(`(() => {
+    document.getElementById("invert-x").click();
+    document.getElementById("invert-y").click();
+    document.getElementById("reset-geometry").click();
+  })()`);
+  await waitFor(() => evaluate(
+    'document.getElementById("measure-x").textContent === "-1" && document.getElementById("measure-y").textContent === "54"'
+  ), "restore default editor signs for further tests");
+  console.log("PASS: X/Y sign inversions, persistence, numeric editing and unchanged XML");
+
   await evaluate(`(() => {
     document.querySelector('#card-palette .swatch[data-index="4"]').click();
     document.querySelector('#button-palette .swatch[data-index="6"]').click();

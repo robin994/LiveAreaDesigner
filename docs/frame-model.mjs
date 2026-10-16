@@ -1,5 +1,5 @@
-import { CARD, DEFAULT_LAYOUT, MIN_BUTTON_SIZE, normalizeLayout, clamp } from "./geometry.mjs?v=1.25";
-import { getRcoLayout } from "./template-slots.mjs?v=1.25";
+import { CARD, DEFAULT_LAYOUT, MIN_BUTTON_SIZE, normalizeLayout, clamp } from "./geometry.mjs?v=1.26";
+import { getRcoLayout } from "./template-slots.mjs?v=1.26";
 
 export function frameKey(style, frameId) {
   return `${style}:${frameId}`;

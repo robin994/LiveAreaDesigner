@@ -1,6 +1,6 @@
-import { CARD, PALETTE } from "./geometry.mjs?v=1.25";
-import { generateTemplate } from "./template.mjs?v=1.25";
-import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.25";
+import { CARD, PALETTE } from "./geometry.mjs?v=1.26";
+import { generateTemplate } from "./template.mjs?v=1.26";
+import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.26";
 
 const encoder = new TextEncoder();
 const SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);

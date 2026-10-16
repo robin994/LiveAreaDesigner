@@ -354,9 +354,14 @@ static void browser_select(App *a) {
         return;
     }
     char feedback[112];
+    const int invert_x = a->cfg.invert_x;
+    const int invert_y = a->cfg.invert_y;
     if (!lad_import_existing_vpk(picked, &a->cfg, feedback, sizeof(feedback))) {
         set_status(a, feedback); return;
     }
+    /* Sign preferences belong to the editor, not the imported VPK. */
+    a->cfg.invert_x = invert_x;
+    a->cfg.invert_y = invert_y;
     snprintf(a->vpk_source, sizeof(a->vpk_source), "%s", picked);
     normalize(a);
     load_texture(a, a->cfg.card_image, &a->card_texture);
@@ -442,6 +447,12 @@ static void settings_adjust(App *a, int delta) {
         if (a->setting_row == 2) p = &a->cfg.card_color;
         if (a->setting_row == 3) p = &a->cfg.button_color;
     } else {
+        if (a->setting_row == 12 || a->setting_row == 13) {
+            int *inverted = a->setting_row == 12 ? &a->cfg.invert_x : &a->cfg.invert_y;
+            *inverted = !*inverted;
+            a->dirty = true;
+            return;
+        }
         if (a->setting_row == 3) p = &a->cfg.template_style;
         if (a->setting_row == 4) p = &a->cfg.frame_id;
         if (a->setting_row == 5) {
@@ -491,6 +502,8 @@ static void settings_confirm(App *a) {
         else if (a->setting_row == 9) toggle_template_preview(a);
         else if (a->setting_row == 10) open_browser(a, 6);
         else if (a->setting_row == 11) patch_selected_vpk(a);
+        else if (a->setting_row == 12 || a->setting_row == 13)
+            settings_adjust(a, 1);
         else {
             char message[112];
             save(a);
@@ -511,7 +524,7 @@ static void navigate(App *a, int dx, int dy, int step) {
     if (a->screen == SCREEN_EDITOR) {
         editor_adjust(a, dx, dy, step);
     } else if (a->screen == SCREEN_SETTINGS) {
-        if (dy) a->setting_row = clampi(a->setting_row + dy, 0, a->settings_tab ? 11 : 4);
+        if (dy) a->setting_row = clampi(a->setting_row + dy, 0, a->settings_tab ? 13 : 4);
         else if (dx) settings_adjust(a, dx);
     } else if (dy) {
         a->browser.selected = clampi(a->browser.selected + dy, 0,
@@ -525,6 +538,12 @@ static void pointer_down(App *a, int x, int y) {
             a->settings_tab = !a->settings_tab; a->setting_row = 0; return;
         }
         if (a->settings_tab) {
+            if (hit(x, y, (Rect){710, 108, 93, 31})) {
+                a->setting_row = 12; settings_confirm(a); return;
+            }
+            if (hit(x, y, (Rect){809, 108, 93, 31})) {
+                a->setting_row = 13; settings_confirm(a); return;
+            }
             if (hit(x, y, (Rect){524, 414, 184, 30})) {
                 a->setting_row = 10; open_browser(a, 6); return;
             }
@@ -963,7 +982,7 @@ static void draw_editor(App *a) {
     box(r, (Rect){0, 0, SW, 34}, (SDL_Color){5, 8, 21, 255}, 245);
     char pos[120];
     snprintf(pos, sizeof(pos), "X:%d Y:%d W:%d H:%d R:%d B:%d",
-             lad_center_x(&a->cfg), lad_center_y(&a->cfg), a->cfg.w, a->cfg.h,
+             lad_editor_center_x(&a->cfg), lad_editor_center_y(&a->cfg), a->cfg.w, a->cfg.h,
              CARD_W - a->cfg.x - a->cfg.w,
              CARD_H - a->cfg.y - a->cfg.h);
     label(a, 12, 9, pos, 2, TEXT, 65);
@@ -1036,10 +1055,21 @@ static void draw_settings_export(App *a) {
     label(a, 269, 464, a->cfg.preview_template ?
           "PREVIEW TEMPLATE: ON" : "PREVIEW TEMPLATE: OFF", 1, TEXT, 0);
 
-    label(a, 524, 112, "LIVEAREA / FRAME PREVIEW", 2, TEXT, 0);
+    label(a, 524, 112, "FRAME PREVIEW", 2, TEXT, 0);
+    const Rect invert_x = {710, 108, 93, 31};
+    const Rect invert_y = {809, 108, 93, 31};
+    box(r, invert_x, a->cfg.invert_x ?
+        (SDL_Color){73, 45, 90, 255} : (SDL_Color){34, 46, 72, 255}, 255);
+    box(r, invert_y, a->cfg.invert_y ?
+        (SDL_Color){73, 45, 90, 255} : (SDL_Color){34, 46, 72, 255}, 255);
+    outline(r, invert_x, a->setting_row == 12 ? GOLD : MUTED);
+    outline(r, invert_y, a->setting_row == 13 ? GOLD : MUTED);
+    label(a, 717, 118, a->cfg.invert_x ? "INVERT X:ON" : "INVERT X:OFF", 1, TEXT, 0);
+    label(a, 816, 118, a->cfg.invert_y ? "INVERT Y:ON" : "INVERT Y:OFF", 1, TEXT, 0);
     draw_card(a, (Rect){524, 150, 378, 225}, false);
     snprintf(line, sizeof(line), "CENTER X:%d Y:%d W:%d H:%d",
-             lad_center_x(&a->cfg), lad_center_y(&a->cfg), a->cfg.w, a->cfg.h);
+             lad_editor_center_x(&a->cfg), lad_editor_center_y(&a->cfg),
+             a->cfg.w, a->cfg.h);
     label(a, 524, 389, line, 2, GOLD, 33);
     action_button(a, (Rect){524, 414, 184, 30}, "OPEN VPK", a->setting_row == 10);
     action_button(a, (Rect){716, 414, 186, 30}, "PATCH VPK", a->setting_row == 11);
@@ -1100,7 +1130,8 @@ static void draw_settings(App *a) {
     label(a, 520, 106, "LIVE PREVIEW", 2, TEXT, 0);
     draw_card(a, (Rect){524, 143, 378, 216}, false);
     snprintf(desc, sizeof(desc), "X:%d Y:%d W:%d H:%d",
-             lad_center_x(&a->cfg), lad_center_y(&a->cfg), a->cfg.w, a->cfg.h);
+             lad_editor_center_x(&a->cfg), lad_editor_center_y(&a->cfg),
+             a->cfg.w, a->cfg.h);
     label(a, 524, 381, desc, 2, TEXT, 31);
     label(a, 524, 412, "BUTTON ALPHA IS IN THE XML+ASSETS TAB", 1, MUTED, 0);
     if (SDL_TICKS_PASSED(a->message_until, SDL_GetTicks()))

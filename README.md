@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — v1.25, corrected Y coordinates, VPK editing, optimized PNG8 and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — v1.26, configurable X/Y signs, VPK editing, optimized PNG8 and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -9,7 +9,7 @@
 LiveArea Designer helps homebrew authors prototype the images and layout of a PS Vita LiveArea page. The simulator has a **960 × 544** screen and a **840 × 500** card whose top 44 pixels are reserved for system controls. The editable **frame image/button** stays out of that area.
 
 - Position/resize an image with touch, mouse, D-pad or numeric inputs.
-- **Signed coordinates relative to the center of the card:** (0, 0) at the center; left/up negative, right/down positive.
+- **Signed coordinates relative to the center of the card:** (0, 0) at the center. By default X is positive right, Y positive up; independently invert either axis in the editor.
 - **Fixed aspect ratio** mode to prevent image distortion.
 - **Transparent button background** mode. Transparent PNG pixels remain transparent in the indexed PNG8 export; JPG content remains opaque.
 - Import PNG/JPG for the card background, movable frame button, fixed startup gate, plus optional bubble icon and bootscreen.
@@ -47,7 +47,9 @@ PNG8 conversion itself remains a **lossy quantization** of RGB colors with binar
 
 The preview reads slot position/size metadata exported from `vs0:/vsh/shell/livearea/*.rco` on a PS Vita (19 native styles). Frame center coordinates are card-relative in the editor; XML generation subtracts **each frame's own RCO center**, so exported `x` and `y` are frame-relative. Switching styles or frame selection does not discard the other frames' settings. Some system-specific frames expose dynamic dimensions; those show a `DYNAMIC` marker, and automatic fitting is unavailable.
 
-**Coordinate directions:** the origin (0, 0) is at the card center. X increases right and decreases left; **Y increases upward and decreases downward**, matching the native RCO coordinate convention. Dragging a liveitem down reduces its displayed and exported Y. Internally, saved layout `x`/`y` still represent top-left pixels, so projects created with earlier versions retain their visual placement without migration. Imported VPK `template.xml` coordinates are interpreted with the same convention.
+**Coordinate directions:** the origin (0, 0) is at the card center. By default X increases right and decreases left; **Y increases upward and decreases downward**, matching the native RCO coordinate convention. With the default signs, dragging a liveitem down decreases both displayed and exported Y. Internally, saved layout `x`/`y` still represent top-left pixels, so projects created with earlier versions retain their visual placement without migration. Imported VPK `template.xml` coordinates are interpreted with the native convention.
+
+**Invert X / Invert Y (v1.26):** two independent checkboxes are available in the web editor's **Geometry > Coordinate signs** section. They flip the signs shown in CENTER X/Y, the editable numeric inputs and **Copy Coordinates**; these preferences persist across refreshes and frame changes. For example, enabling **Invert Y** means Y is negative above the center and positive below. The actual image position and exported `template.xml` are **not affected**, since the firmware retains its native coordinate convention. On the Vita app, open **Settings > Template + VPK**, use the **INVERT X / INVERT Y** controls above the miniature preview; these persist in `settings.ini`.
 
 The web app can download a standalone `template.xml` and **Export LiveArea Assets (.zip)**, which contains:
 
@@ -117,6 +119,8 @@ age_limit=0
 vita_only=0
 autoflip=0
 preview_template=1
+invert_x=0
+invert_y=1
 frame.0.1.image=ux0:/data/example-frame1.png
 frame.0.1.text=Frame One
 frame.0.1.target=https://example.org/one
@@ -152,7 +156,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (v1.25). RCO geometry is verified against the user's own Vita firmware, but the VPK editing workflow and newly exported XML/PNG8 assets still require end-to-end hardware testing.
+Output: `build/LIVAREA01.vpk` (v1.26). RCO geometry is verified against the user's own Vita firmware, but the VPK editing workflow and newly exported XML/PNG8 assets still require end-to-end hardware testing.
 
 Tests:
 

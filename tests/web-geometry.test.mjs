@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   SCREEN, CARD, RESERVED_TOP, PALETTE, DEFAULT_LAYOUT, normalizeLayout,
-  offsets, centeredOffsets, cardPositionFromCenteredOffsets, buttonOnScreen,
+  offsets, centeredOffsets, editorOffsets, cardPositionFromCenteredOffsets,
+  cardPositionFromEditorOffsets, buttonOnScreen,
   toCanvasPoint, hitTest, dragLayout, stepLayout
 } from "../docs/geometry.mjs";
 import { generateTemplate } from "../docs/template.mjs";
@@ -44,6 +45,30 @@ test("center coordinates use +Y upward and -Y downward without moving saved pixe
     assert.equal(centeredOffsets(normalizeLayout(saved)).y, signed.y,
       "Older localStorage layouts keep their screen-space position");
   }
+});
+
+test("X/Y sign inversion changes only editor coordinates and is reversible", () => {
+  const layout = normalizeLayout({ ...DEFAULT_LAYOUT, x: 277, y: 112, w: 285, h: 167 });
+  const canonical = centeredOffsets(layout);
+  for (const invertX of [false, true]) {
+    for (const invertY of [false, true]) {
+      const options = { invertX, invertY };
+      const visible = editorOffsets(layout, options);
+      assert.equal(visible.x, invertX ? -canonical.x : canonical.x);
+      assert.equal(visible.y, invertY ? -canonical.y : canonical.y);
+      assert.deepEqual(cardPositionFromEditorOffsets(layout, visible.x, visible.y, options),
+        { x: layout.x, y: layout.y }, "Changing signs never moves the liveitem");
+      const position = cardPositionFromEditorOffsets(layout, 21, -39, options);
+      const updated = normalizeLayout({ ...layout, ...position });
+      assert.deepEqual(editorOffsets(updated, options), { x: 21, y: -39 },
+        "Typing a signed coordinate moves to the matching physical position");
+      assert.equal(frameRelativeOffsets(layout).y, frameRelativeOffsets({
+        ...layout, invertX, invertY
+      }).y, "Editor-only signs must not change the native XML offset");
+    }
+  }
+  assert.deepEqual(editorOffsets(DEFAULT_LAYOUT, { invertX: true, invertY: true }),
+    { x: 1, y: -54 });
 });
 
 test("movement respects the system-reserved strip and card bounds", () => {

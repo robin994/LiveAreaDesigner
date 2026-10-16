@@ -1,4 +1,4 @@
-import { frameCount } from "./template-slots.mjs?v=1.25";
+import { frameCount } from "./template-slots.mjs?v=1.26";
 
 export const SCREEN = Object.freeze({ width: 960, height: 544 });
 export const CARD = Object.freeze({ x: 60, y: 44, width: 840, height: 500 });
@@ -113,12 +113,22 @@ export function centeredOffsets(layout) {
   };
 }
 
+/** Editor-only sign convention. Source geometry and Vita XML stay canonical. */
+export function editorOffsets(layout, { invertX = false, invertY = false } = {}) {
+  const { x, y } = centeredOffsets(layout);
+  return { x: invertX ? -x : x, y: invertY ? -y : y };
+}
+
 /** Exact integer inverse, including odd image widths/heights. */
 export function cardPositionFromCenteredOffsets(layout, x, y) {
   return {
     x: Math.round(x) + CARD.width / 2 - Math.ceil(layout.w / 2),
     y: CARD.height / 2 - Math.ceil(layout.h / 2) - Math.round(y)
   };
+}
+
+export function cardPositionFromEditorOffsets(layout, x, y, { invertX = false, invertY = false } = {}) {
+  return cardPositionFromCenteredOffsets(layout, invertX ? -x : x, invertY ? -y : y);
 }
 
 export function toCanvasPoint(clientX, clientY, bounds) {

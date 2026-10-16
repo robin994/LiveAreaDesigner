@@ -36,6 +36,8 @@ typedef struct {
     int vita_only;
     int autoflip;
     int preview_template;
+    int invert_x;
+    int invert_y;
     char card_image[LAD_PATH_MAX];
     char button_image[LAD_PATH_MAX];
     char gate_image[LAD_PATH_MAX];

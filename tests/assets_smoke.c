@@ -44,6 +44,7 @@ int main(void) {
     designer_defaults(&cfg);
     assert(cfg.x == 276 && cfg.y == 112 && cfg.card_color == 0);
     assert(cfg.preview_template == 0);
+    assert(cfg.invert_x == 0 && cfg.invert_y == 0);
     designer_store_active_frame(&cfg);
     assert(cfg.frames[0][2].initialized && cfg.frames[0][2].w == 286);
     DesignerFrame fallback = {0};
@@ -70,6 +71,7 @@ int main(void) {
     assert(cfg.x == 89 && cfg.w == 126 && cfg.frame_id == 1);
     assert(strcmp(cfg.frame_text, "FIRST FRAME TEXT") == 0);
     assert(strcmp(cfg.button_image, "ux0:/data/frame1-red.png") == 0);
+    cfg.invert_x = 1; cfg.invert_y = 1;
 
     /* Run this test from build/host-test so that settings.ini stays temporary. */
     mkdir("ux0:data", 0777);
@@ -78,6 +80,7 @@ int main(void) {
     DesignerConfig restored;
     designer_load(&restored);
     assert(restored.frame_id == 1 && restored.w == 126);
+    assert(restored.invert_x == 1 && restored.invert_y == 1);
     designer_load_active_frame(&restored, 0, 2, &fallback);
     assert(restored.w == 98);
     assert(strcmp(restored.frame_text, "SECOND FRAME TEXT") == 0);

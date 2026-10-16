@@ -16,6 +16,13 @@ int main(void) {
 
     assert(lad_center_x(&cfg) == -1);
     assert(lad_center_y(&cfg) == 54);
+    assert(lad_editor_center_x(&cfg) == -1);
+    assert(lad_editor_center_y(&cfg) == 54);
+    cfg.invert_x = 1; cfg.invert_y = 1;
+    assert(lad_editor_center_x(&cfg) == 1);
+    assert(lad_editor_center_y(&cfg) == -54);
+    assert(lad_center_x(&cfg) == -1); // XML convention must stay unchanged
+    assert(lad_center_y(&cfg) == 54);
     cfg.w = 285;
     cfg.h = 167;
     assert(lad_center_x(&cfg) == -1); /* Browser rounds .5 upward. */

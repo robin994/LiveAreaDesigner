@@ -151,6 +151,8 @@ void designer_load(DesignerConfig *cfg) {
         else if (strcmp(line, "vita_only") == 0) cfg->vita_only = atoi(eq);
         else if (strcmp(line, "autoflip") == 0) cfg->autoflip = atoi(eq);
         else if (strcmp(line, "preview_template") == 0) cfg->preview_template = atoi(eq);
+        else if (strcmp(line, "invert_x") == 0) cfg->invert_x = atoi(eq) != 0;
+        else if (strcmp(line, "invert_y") == 0) cfg->invert_y = atoi(eq) != 0;
         else if (strcmp(line, "card_image") == 0 && strlen(eq) < sizeof(cfg->card_image))
             strcpy(cfg->card_image, eq);
         else if (strcmp(line, "button_image") == 0 && strlen(eq) < sizeof(cfg->button_image))
@@ -188,12 +190,13 @@ bool designer_save(const DesignerConfig *cfg) {
         "x=%d\ny=%d\nw=%d\nh=%d\ncard_color=%d\nbutton_color=%d\n"
         "aspect_lock=%d\naspect_width=%d\naspect_height=%d\ntransparent_button=%d\n"
         "template_style=%d\nframe_id=%d\nage_limit=%d\nvita_only=%d\nautoflip=%d\npreview_template=%d\n"
+        "invert_x=%d\ninvert_y=%d\n"
         "card_image=%s\nbutton_image=%s\ngate_image=%s\nicon_image=%s\nboot_image=%s\nmanual_dir=%s\n"
         "frame_target=%s\nframe_text=%s\nframe_lang=%s\n",
         cfg->x, cfg->y, cfg->w, cfg->h, cfg->card_color, cfg->button_color,
         cfg->aspect_lock, cfg->aspect_width, cfg->aspect_height, cfg->transparent_button,
         cfg->template_style, cfg->frame_id, cfg->age_limit, cfg->vita_only, cfg->autoflip,
-        cfg->preview_template,
+        cfg->preview_template, cfg->invert_x, cfg->invert_y,
         cfg->card_image, cfg->button_image, cfg->gate_image, cfg->icon_image,
         cfg->boot_image, cfg->manual_dir, cfg->frame_target, cfg->frame_text, cfg->frame_lang);
     for (int style = 0; style < LAD_STYLE_COUNT; ++style) {

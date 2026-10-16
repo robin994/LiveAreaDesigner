@@ -12,6 +12,8 @@
 bool lad_write_template(FILE *out, const DesignerConfig *config);
 int lad_center_x(const DesignerConfig *config);
 int lad_center_y(const DesignerConfig *config);
+int lad_editor_center_x(const DesignerConfig *config);
+int lad_editor_center_y(const DesignerConfig *config);
 void lad_resolve_frame(const DesignerConfig *config, int frame_id,
                        DesignerFrame *out);
 

@@ -19,6 +19,14 @@ int lad_center_y(const DesignerConfig *config) {
     /* Card center: Y=0 at 250 px, up positive and down negative. */
     return 250 - config->y - (config->h + 1) / 2;
 }
+int lad_editor_center_x(const DesignerConfig *config) {
+    const int x = lad_center_x(config);
+    return config->invert_x ? -x : x;
+}
+int lad_editor_center_y(const DesignerConfig *config) {
+    const int y = lad_center_y(config);
+    return config->invert_y ? -y : y;
+}
 
 void lad_resolve_frame(const DesignerConfig *cfg, int frame_id,
                        DesignerFrame *out) {

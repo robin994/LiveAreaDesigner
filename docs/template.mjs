@@ -1,6 +1,6 @@
-import { normalizeLayout } from "./geometry.mjs?v=1.25";
-import { frameRelativeOffsets } from "./template-preview.mjs?v=1.25";
-import { allFrameLayouts } from "./frame-model.mjs?v=1.25";
+import { normalizeLayout } from "./geometry.mjs?v=1.26";
+import { frameRelativeOffsets } from "./template-preview.mjs?v=1.26";
+import { allFrameLayouts } from "./frame-model.mjs?v=1.26";
 
 function escapeXml(value) {
   return String(value).replace(/[&<>"']/g, char => ({

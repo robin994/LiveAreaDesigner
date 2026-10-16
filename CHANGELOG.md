@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.26 - 2026-10-16 (editor coordinate sign preferences)
+
+- Added independent **Invert X** and **Invert Y** controls to the web editor, under **Geometry > Coordinate signs**, and to the Vita app's **Template + VPK** settings.
+- The displayed CENTER X/Y numbers, numeric coordinate fields and copied values use the selected sign convention. Both checkboxes default to OFF, preserving the existing behavior.
+- Sign preferences persist in browser localStorage and the Vita `settings.ini`, independently of the selected frame. Input ranges and direction hints update to match the selected convention.
+- Saved pixel positions, dimensions, original artwork and native `template.xml` export are unaffected. Vita frame coordinates remain in the firmware's canonical convention regardless of the editor preferences.
+- Added coordinate sign/reversible input/persistence regression tests for web and native C.
+
 ## v1.25 - 2026-10-16 (coordinate-direction correction)
 
 - Corrected LiveArea Y to use the standard centered Cartesian convention: **Y positive up, negative down**. The web measurements, numeric input, copied offsets, Vita on-screen readings, and exported frame-relative `template.xml` values now agree.

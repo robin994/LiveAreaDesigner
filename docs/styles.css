@@ -379,6 +379,16 @@ kbd {
 
 .geometry-caption { margin: -6px 0 14px; font-size: 10px; line-height: 1.6; color: #94a2bb; }
 .geometry-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.axis-options {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px 15px;
+  margin-top: 13px; padding: 10px 12px; border: 1px solid #33445e;
+  background: #101c30; border-radius: 7px;
+}
+.axis-options-title { color: #99acc5; font-size: 10px; font-weight: 700; margin-right: auto; }
+.axis-option { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  color: #e4e6f6; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.axis-option input { accent-color: #f4b8ed; width: 16px; height: 16px; margin: 0; }
+.axis-options-note { margin: 6px 0 0; color: #91a0b9; font-size: 10px; line-height: 1.5; }
 .editor-check {
   display: flex; align-items: flex-start; gap: 10px; margin: 13px 0;
   color: #e4e6f6; cursor: pointer; font-size: 12px; font-weight: 600;

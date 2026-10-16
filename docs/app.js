@@ -1,20 +1,20 @@
 import {
   SCREEN, CARD, RESERVED_TOP, PALETTE, DEFAULT_LAYOUT, centeredOffsets,
-  cardPositionFromCenteredOffsets,
+  editorOffsets, cardPositionFromEditorOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
-} from "./geometry.mjs?v=1.25";
-import { generateTemplate } from "./template.mjs?v=1.25";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.25";
+} from "./geometry.mjs?v=1.26";
+import { generateTemplate } from "./template.mjs?v=1.26";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.26";
 import {
   previewGate, previewFrames, previewSummary, frameRelativeOffsets,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
-} from "./template-preview.mjs?v=1.25";
+} from "./template-preview.mjs?v=1.26";
 import {
   frameKey, frameLayoutFor, allFrameLayouts, clampLiveitemToFrame
-} from "./frame-model.mjs?v=1.25";
-import { readVpk, patchVpk } from "./vpk.mjs?v=1.25";
-import { readVpkProject } from "./vpk-import.mjs?v=1.25";
+} from "./frame-model.mjs?v=1.26";
+import { readVpk, patchVpk } from "./vpk.mjs?v=1.26";
+import { readVpkProject } from "./vpk-import.mjs?v=1.26";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";
@@ -52,6 +52,8 @@ const state = {
   frameImageKeys: Array.isArray(stored?.frameImageKeys) ? stored.frameImageKeys : [],
   mode: stored?.mode === "resize" ? "resize" : "move",
   guides: stored?.guides !== false,
+  invertX: stored?.invertX === true,
+  invertY: stored?.invertY === true,
   optimizeImages: stored?.optimizeImages !== false,
   templatePreview: stored?.templatePreview === true,
   images: { card: null, button: null, frames: {}, gate: null, icon: null, boot: null, manual: [] },
@@ -82,6 +84,7 @@ function savePreferences() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
       layout: state.layout, mode: state.mode, guides: state.guides,
+      invertX: state.invertX, invertY: state.invertY,
       templatePreview: state.templatePreview, optimizeImages: state.optimizeImages,
       frameLayouts: state.frameLayouts,
       frameImageKeys: state.frameImageKeys
@@ -373,7 +376,7 @@ function buildPalette(target) {
 function updateInterface() {
   const layout = state.layout;
   const margin = offsets(layout);
-  const center = centeredOffsets(layout);
+  const center = editorOffsets(layout, state);
   const measures = {
     x: center.x, y: center.y, w: layout.w, h: layout.h,
     right: margin.right, bottom: margin.bottom
@@ -387,12 +390,24 @@ function updateInterface() {
     if (document.activeElement !== input)
       input.value = key === "x" || key === "y" ? center[key] : layout[key];
   }
-  fields.x.min = String(Math.round(layout.w / 2 - CARD.width / 2));
-  fields.x.max = String(Math.round(CARD.width / 2 - layout.w / 2));
-  fields.y.min = String(centeredOffsets({ ...layout, y: CARD.height - layout.h }).y);
-  fields.y.max = String(centeredOffsets({ ...layout, y: RESERVED_TOP }).y);
+  for (const axis of ["x", "y"]) {
+    const edge = axis === "x" ? CARD.width - layout.w : CARD.height - layout.h;
+    const start = editorOffsets({ ...layout, [axis]: axis === "x" ? 0 : RESERVED_TOP }, state)[axis];
+    const end = editorOffsets({ ...layout, [axis]: edge }, state)[axis];
+    fields[axis].min = String(Math.min(start, end));
+    fields[axis].max = String(Math.max(start, end));
+  }
   fields.w.max = String(CARD.width - layout.x);
   fields.h.max = String(CARD.height - layout.y);
+  document.getElementById("invert-x").checked = state.invertX;
+  document.getElementById("invert-y").checked = state.invertY;
+  document.getElementById("axis-x-direction").textContent = state.invertX ?
+    "RIGHT − / LEFT +" : "RIGHT + / LEFT −";
+  document.getElementById("axis-y-direction").textContent = state.invertY ?
+    "UP − / DOWN +" : "UP + / DOWN −";
+  fields.y.title = state.invertY ?
+    "Y is negative upward and positive downward" :
+    "Y is positive upward and negative downward";
   document.getElementById("lock-aspect").checked = layout.lockAspect;
   document.getElementById("transparent-button").checked = layout.transparentButton;
   const frameSelector = document.getElementById("xml-frame");
@@ -448,7 +463,7 @@ function updateInterface() {
       `Style ${summary.style} · ${summary.frame} / ${summary.frameCount} · ${summary.frameSize} · ${summary.gateDescription}`;
     const relative = frameRelativeOffsets(layout);
     document.getElementById("template-frame-offsets").textContent =
-      `XML frame offsets: X ${relative.x} px · Y ${relative.y} px`;
+      `Native XML frame offsets: X ${relative.x} px · Y ${relative.y} px`;
     const fits = imageFitsSelectedFrame(layout);
     const frame = selectedFrame(layout);
     const warning = document.getElementById("template-fit-warning");
@@ -1063,7 +1078,7 @@ async function downloadModifiedVpk() {
 
 async function copyCoordinates() {
   const { w, h } = state.layout;
-  const { x, y } = centeredOffsets(state.layout);
+  const { x, y } = editorOffsets(state.layout, state);
   const { right, bottom } = offsets(state.layout);
   const text = `X=${x}, Y=${y}, W=${w}, H=${h}, RIGHT=${right}, BOTTOM=${bottom}`;
   try {
@@ -1091,6 +1106,13 @@ function bindEditor() {
     savePreferences();
     scheduleDraw();
   });
+  for (const axis of ["x", "y"]) {
+    document.getElementById(`invert-${axis}`).addEventListener("change", event => {
+      state[axis === "x" ? "invertX" : "invertY"] = event.target.checked;
+      savePreferences();
+      scheduleDraw();
+    });
+  }
   elements.templatePreview.addEventListener("click", () => {
     setTemplatePreview(!state.templatePreview);
   });
@@ -1128,10 +1150,10 @@ function bindEditor() {
     const commitGeometry = next =>
       setLayout(state.templatePreview ? clampLiveitemToFrame(next) : next);
     if (key === "x" || key === "y") {
-      const current = centeredOffsets(state.layout);
-      const position = cardPositionFromCenteredOffsets(state.layout,
+      const current = editorOffsets(state.layout, state);
+      const position = cardPositionFromEditorOffsets(state.layout,
         key === "x" ? number : current.x,
-        key === "y" ? number : current.y)[key];
+        key === "y" ? number : current.y, state)[key];
       commitGeometry({ ...state.layout, [key]: position });
     } else if (state.layout.lockAspect) {
       commitGeometry(dragLayout(state.layout, key === "w" ? number - state.layout.w : 0,
@@ -1150,7 +1172,7 @@ function bindEditor() {
       if (input.value.trim() !== "") {
         editGeometry(key, input.value);
       }
-      input.value = key === "x" || key === "y" ? centeredOffsets(state.layout)[key] : state.layout[key];
+      input.value = key === "x" || key === "y" ? editorOffsets(state.layout, state)[key] : state.layout[key];
     });
   }
   document.getElementById("lock-aspect").addEventListener("change", event => {
