@@ -1,6 +1,13 @@
 export const SCREEN = Object.freeze({ width: 960, height: 544 });
-export const CARD = Object.freeze({ x: 60, y: 44, width: 840, height: 480 });
+export const CARD = Object.freeze({ x: 60, y: 44, width: 840, height: 500 });
 export const MIN_BUTTON_SIZE = 24;
+// The first 44 card pixels are occupied by native update/manual action controls.
+export const RESERVED_TOP = 44;
+export const TEMPLATE_STYLES = Object.freeze([
+  "a1", "a2", "a3", "a4", "a5", "ad0", "ad1", "ad2", "ad3", "ad4",
+  "browser", "content_manager", "kids", "music", "nsx1", "ps1emu",
+  "psmobile", "pspemu", "vd"
+]);
 
 export const PALETTE = Object.freeze([
   { name: "Purple", hex: "#71009e" },
@@ -21,7 +28,18 @@ export const DEFAULT_LAYOUT = Object.freeze({
   w: 286,
   h: 168,
   cardColor: 0,
-  buttonColor: 1
+  buttonColor: 1,
+  lockAspect: false,
+  aspectRatio: 286 / 168,
+  transparentButton: false,
+  templateStyle: "a1",
+  frameId: 3,
+  frameTarget: "https://example.com",
+  frameText: "",
+  frameLang: "",
+  ageLimit: 0,
+  vitaOnly: false,
+  autoFlip: false
 });
 
 function numberOr(value, fallback) {
@@ -36,14 +54,32 @@ export function clamp(value, min, max) {
 
 export function normalizeLayout(input = {}) {
   const w = clamp(numberOr(input.w, DEFAULT_LAYOUT.w), MIN_BUTTON_SIZE, CARD.width);
-  const h = clamp(numberOr(input.h, DEFAULT_LAYOUT.h), MIN_BUTTON_SIZE, CARD.height);
+  const h = clamp(numberOr(input.h, DEFAULT_LAYOUT.h), MIN_BUTTON_SIZE, CARD.height - RESERVED_TOP);
+  const rawRatio = Number(input.aspectRatio);
+  const aspectRatio = Number.isFinite(rawRatio) && rawRatio > 0
+    ? clamp(rawRatio, .05, 20) : DEFAULT_LAYOUT.aspectRatio;
+  const templateStyle = TEMPLATE_STYLES.includes(input.templateStyle)
+    ? input.templateStyle : DEFAULT_LAYOUT.templateStyle;
+  const frameLang = ["", "en", "ja", "fr", "es", "de", "it", "pt", "ko", "ru"].includes(input.frameLang)
+    ? input.frameLang : "";
   return {
     x: clamp(numberOr(input.x, DEFAULT_LAYOUT.x), 0, CARD.width - w),
-    y: clamp(numberOr(input.y, DEFAULT_LAYOUT.y), 0, CARD.height - h),
+    y: clamp(numberOr(input.y, DEFAULT_LAYOUT.y), RESERVED_TOP, CARD.height - h),
     w,
     h,
     cardColor: clamp(numberOr(input.cardColor, DEFAULT_LAYOUT.cardColor), 0, PALETTE.length - 1),
-    buttonColor: clamp(numberOr(input.buttonColor, DEFAULT_LAYOUT.buttonColor), 0, PALETTE.length - 1)
+    buttonColor: clamp(numberOr(input.buttonColor, DEFAULT_LAYOUT.buttonColor), 0, PALETTE.length - 1),
+    lockAspect: input.lockAspect === true,
+    aspectRatio,
+    transparentButton: input.transparentButton === true,
+    templateStyle,
+    frameId: clamp(numberOr(input.frameId, DEFAULT_LAYOUT.frameId), 1, 3),
+    frameTarget: typeof input.frameTarget === "string" ? input.frameTarget.slice(0, 240) : DEFAULT_LAYOUT.frameTarget,
+    frameText: typeof input.frameText === "string" ? input.frameText.slice(0, 160) : "",
+    frameLang,
+    ageLimit: clamp(numberOr(input.ageLimit, 0), 0, 18),
+    vitaOnly: input.vitaOnly === true,
+    autoFlip: input.autoFlip === true
   };
 }
 
@@ -62,6 +98,15 @@ export function buttonOnScreen(layout) {
     y: CARD.y + layout.y,
     w: layout.w,
     h: layout.h
+  };
+}
+
+// Card center is (0,0); negative coordinates are left/up, positive right/down.
+// These are design coordinates. Frame image coordinates are frame-relative on Vita.
+export function centeredOffsets(layout) {
+  return {
+    x: Math.round(layout.x + layout.w / 2 - CARD.width / 2),
+    y: Math.round(layout.y + layout.h / 2 - CARD.height / 2)
   };
 }
 
@@ -87,6 +132,19 @@ export function dragLayout(initial, deltaX, deltaY, action) {
   const dx = Math.round(deltaX);
   const dy = Math.round(deltaY);
   if (action === "resize") {
+    if (initial.lockAspect) {
+      const ratio = initial.aspectRatio;
+      const maxWidth = Math.min(CARD.width - initial.x, Math.floor((CARD.height - initial.y) * ratio));
+      const maxHeight = Math.min(CARD.height - initial.y, Math.floor((CARD.width - initial.x) / ratio));
+      let w = Math.max(MIN_BUTTON_SIZE, initial.w + dx);
+      let h = Math.max(MIN_BUTTON_SIZE, initial.h + dy);
+      if (Math.abs(dx / Math.max(1, initial.w)) >= Math.abs(dy / Math.max(1, initial.h))) h = Math.round(w / ratio);
+      else w = Math.round(h * ratio);
+      w = clamp(w, MIN_BUTTON_SIZE, Math.max(MIN_BUTTON_SIZE, maxWidth));
+      h = clamp(Math.round(w / ratio), MIN_BUTTON_SIZE, Math.max(MIN_BUTTON_SIZE, maxHeight));
+      w = clamp(Math.round(h * ratio), MIN_BUTTON_SIZE, Math.max(MIN_BUTTON_SIZE, maxWidth));
+      return normalizeLayout({ ...initial, w, h });
+    }
     return normalizeLayout({
       ...initial,
       w: clamp(initial.w + dx, MIN_BUTTON_SIZE, CARD.width - initial.x),

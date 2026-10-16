@@ -4,7 +4,7 @@
  * Requires Google Chrome installed locally (override with CHROME_BIN).
  */
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -161,7 +161,7 @@ try {
   assert.equal(pageState.paletteLabel, "Select Purple for the card");
   assert.equal(pageState.width, 960);
   assert.equal(pageState.height, 544);
-  assert.equal(pageState.x, "276");
+  assert.equal(pageState.x, "-1");
   assert.equal(pageState.right, "278");
   console.log("PASS: desktop initialization and native dimensions");
 
@@ -169,10 +169,10 @@ try {
     document.querySelector('#card-palette .swatch[data-index="4"]').click();
     document.querySelector('#button-palette .swatch[data-index="6"]').click();
     const field = document.querySelector("#input-x");
-    field.value = "200";
+    field.value = "-100";
     field.dispatchEvent(new Event("input", { bubbles: true }));
   })()`);
-  await waitFor(() => evaluate('document.querySelector("#measure-x").textContent === "200"'), "geometry input");
+  await waitFor(() => evaluate('document.querySelector("#measure-x").textContent === "-100"'), "geometry input");
   const colorState = await evaluate(`({
     card: document.querySelector("#card-palette .swatch[data-index='4']").getAttribute("aria-pressed"),
     button: document.querySelector("#button-palette .swatch[data-index='6']").getAttribute("aria-pressed")
@@ -185,17 +185,17 @@ try {
     const r = document.querySelector("#preview").getBoundingClientRect();
     return { left: r.left, top: r.top, width: r.width, height: r.height };
   })()`);
-  const dragStart = point(metrics, 60 + 200 + 75, 44 + 112 + 75);
-  const dragEnd = point(metrics, 60 + 200 + 75 + 55, 44 + 112 + 75 + 30);
+  const dragStart = point(metrics, 60 + 177 + 75, 44 + 112 + 75);
+  const dragEnd = point(metrics, 60 + 177 + 75 + 55, 44 + 112 + 75 + 30);
   await mouse("mousePressed", dragStart.x, dragStart.y, 1);
   await mouse("mouseMoved", dragEnd.x, dragEnd.y, 1);
   await mouse("mouseReleased", dragEnd.x, dragEnd.y);
-  await waitFor(() => evaluate('document.querySelector("#measure-x").textContent === "255"'), "pointer drag");
-  assert.equal(await evaluate('document.querySelector("#measure-y").textContent'), "142");
+  await waitFor(() => evaluate('document.querySelector("#measure-x").textContent === "-45"'), "pointer drag");
+  assert.equal(await evaluate('document.querySelector("#measure-y").textContent'), "-24");
   console.log("PASS: pointer drag with CSS-scaled canvas coordinates");
 
-  const resizeStart = point(metrics, 60 + 255 + 286, 44 + 142 + 168);
-  const resizeEnd = point(metrics, 60 + 255 + 286 + 32, 44 + 142 + 168 + 24);
+  const resizeStart = point(metrics, 60 + 232 + 286, 44 + 142 + 168);
+  const resizeEnd = point(metrics, 60 + 232 + 286 + 32, 44 + 142 + 168 + 24);
   await mouse("mousePressed", resizeStart.x, resizeStart.y, 1);
   await mouse("mouseMoved", resizeEnd.x, resizeEnd.y, 1);
   await mouse("mouseReleased", resizeEnd.x, resizeEnd.y);
@@ -234,6 +234,100 @@ try {
   assert.equal(await evaluate('document.getElementById("measure-w").textContent'), "328");
   assert.equal(await evaluate('document.getElementById("card-color-name").textContent'), "Green");
   console.log("PASS: geometry, colors, and images persist after reload");
+
+  await evaluate(`(() => {
+    document.getElementById("transparent-button").click();
+    document.getElementById("lock-aspect").click();
+    const style = document.getElementById("xml-style");
+    style.value = "a2";
+    style.dispatchEvent(new Event("input", { bubbles: true }));
+    const target = document.getElementById("xml-target");
+    target.value = "https://example.org/?a=1&b=2";
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate(`JSON.parse(localStorage.getItem("livearea-designer-web-v1")).layout.transparentButton === true`), "alpha setting");
+  const xmlSettings = await evaluate(`({
+    aspect: document.getElementById("lock-aspect").checked,
+    alpha: document.getElementById("transparent-button").checked,
+    style: document.getElementById("xml-style").value,
+    target: document.getElementById("xml-target").value
+  })`);
+  assert.equal(xmlSettings.aspect, true);
+  assert.equal(xmlSettings.alpha, true);
+  assert.equal(xmlSettings.style, "a2");
+  assert.equal(xmlSettings.target, "https://example.org/?a=1&b=2");
+  console.log("PASS: aspect lock, transparency and XML options via browser UI");
+
+  const bundle = await evaluate(`(async () => {
+    const { buildLiveAreaPackage } = await import("./package.mjs");
+    const { generateTemplate } = await import("./template.mjs");
+    const { DEFAULT_LAYOUT } = await import("./geometry.mjs");
+    const config = { ...DEFAULT_LAYOUT, transparentButton: true };
+    const zip = await buildLiveAreaPackage(config, {
+      card: null, button: null, gate: null, icon: null, boot: null, manual: []
+    });
+    const bytes = new Uint8Array(await zip.arrayBuffer());
+    const v = new DataView(bytes.buffer);
+    const decoder = new TextDecoder();
+    let pos = 0;
+    const assets = [];
+    while (pos + 30 < bytes.length && v.getUint32(pos, true) === 0x04034b50) {
+      const length = v.getUint32(pos + 18, true);
+      const nameLen = v.getUint16(pos + 26, true);
+      const extraLen = v.getUint16(pos + 28, true);
+      const name = decoder.decode(bytes.subarray(pos + 30, pos + 30 + nameLen));
+      const start = pos + 30 + nameLen + extraLen;
+      const content = bytes.subarray(start, start + length);
+      const png = name.endsWith(".png");
+      const pngProps = png ? { depth: content[24], colorType: content[25],
+        transparency: decoder.decode(content).includes("tRNS") } : {};
+      assets.push({ name, ...pngProps });
+      pos = start + length;
+    }
+    return { assets, size: bytes.length,
+      xml: generateTemplate(config) };
+  })()`);
+  assert.ok(bundle.size > 500);
+  assert.deepEqual(bundle.assets.map(asset => asset.name), [
+    "sce_sys/livearea/contents/template.xml",
+    "sce_sys/livearea/contents/bg0.png",
+    "sce_sys/livearea/contents/startup.png",
+    "sce_sys/livearea/contents/button.png"
+  ]);
+  for (const asset of bundle.assets.filter(asset => asset.name.endsWith(".png"))) {
+    assert.equal(asset.depth, 8);
+    assert.equal(asset.colorType, 3);
+  }
+  assert.equal(bundle.assets.at(-1).transparency, true);
+  assert.match(bundle.xml, /<startup-image>startup.png<\/startup-image>/);
+  console.log("PASS: downloadable ZIP contains XML and PNG8 indexed assets with alpha");
+
+  const downloads = join(temp, "downloads");
+  await mkdir(downloads, { recursive: true });
+  await send("Page.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
+  await evaluate('document.getElementById("download-package").click()');
+  const zipFilename = join(downloads, "LiveAreaDesigner-assets.zip");
+  await waitFor(async () => {
+    const data = await readFile(zipFilename);
+    return data.length > 400;
+  }, "package download", 20000);
+  // ZIP integrity and both PNG palette encoding + dimensions are checked from
+  // the actual file downloaded using the site's button.
+  execFileSync("unzip", ["-t", zipFilename]);
+  const xmlFile = execFileSync("unzip", ["-p", zipFilename,
+    "sce_sys/livearea/contents/template.xml"]).toString("utf8");
+  assert.match(xmlFile, /<livearea style="a2"/);
+  assert.match(xmlFile, /https:\/\/example.org\/\?a=1&amp;b=2/);
+  const png = execFileSync("unzip", ["-p", zipFilename,
+    "sce_sys/livearea/contents/bg0.png"]);
+  assert.equal(png.readUInt32BE(16), 840);
+  assert.equal(png.readUInt32BE(20), 500);
+  assert.equal(png[24], 8);
+  assert.equal(png[25], 3);
+  const buttonPng = execFileSync("unzip", ["-p", zipFilename,
+    "sce_sys/livearea/contents/button.png"]);
+  assert.ok(buttonPng.includes(Buffer.from("tRNS")));
+  console.log("PASS: downloaded ZIP is valid and contains real PNG8 images + escaped XML");
 
   await screenshot("desktop.png");
   await send("Emulation.setDeviceMetricsOverride", {

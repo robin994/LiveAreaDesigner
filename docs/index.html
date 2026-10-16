@@ -23,11 +23,11 @@
       <span class="brand-name">LIVEAREA <strong>DESIGNER</strong><small>PS VITA DESIGN TOOL</small></span>
     </a>
     <div class="header-right">
-      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.11</span>
+      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.20</span>
       <a class="header-link" href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">
         GitHub <span aria-hidden="true">↗</span>
       </a>
-      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.11" target="_blank" rel="noopener noreferrer">
+      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.20" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 17v3h16v-3"/></svg>
         Download VPK
       </a>
@@ -43,7 +43,7 @@
       </div>
       <div class="intro-facts" aria-label="Simulator specifications">
         <div class="fact"><span>RESOLUTION</span><strong>960 <i>×</i> 544</strong></div>
-        <div class="fact"><span>CARD AREA</span><strong>840 <i>×</i> 480</strong></div>
+        <div class="fact"><span>CARD AREA</span><strong>840 <i>×</i> 500</strong></div>
         <div class="fact"><span>UNITS</span><strong>PIXELS / PX</strong></div>
       </div>
     </div>
@@ -86,14 +86,14 @@
             <span class="screen-corner screen-corner-br" aria-hidden="true"></span>
           </div>
           <div class="preview-bottom">
-            <div class="help-copy"><span class="pointer-symbol" aria-hidden="true">↗</span> Drag the button to move it; use the yellow handle to resize it.</div>
+            <div class="help-copy"><span class="pointer-symbol" aria-hidden="true">↗</span> Drag the button or its yellow resize handle. The top 44px system area is protected.</div>
             <span class="keyboard-tip">ARROWS <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> <small>SHIFT × 10</small></span>
           </div>
         </div>
 
         <div class="measurements" aria-label="Current measurements in pixels">
-          <div class="measurement"><span>POSITION X</span><div><strong id="measure-x">276</strong><small>px</small></div></div>
-          <div class="measurement"><span>POSITION Y</span><div><strong id="measure-y">112</strong><small>px</small></div></div>
+          <div class="measurement"><span>CENTER X</span><div><strong id="measure-x">-1</strong><small>px</small></div></div>
+          <div class="measurement"><span>CENTER Y</span><div><strong id="measure-y">-54</strong><small>px</small></div></div>
           <div class="measurement"><span>WIDTH</span><div><strong id="measure-w">286</strong><small>px</small></div></div>
           <div class="measurement"><span>HEIGHT</span><div><strong id="measure-h">168</strong><small>px</small></div></div>
           <div class="measurement"><span>RIGHT OFFSET</span><div><strong id="measure-right">278</strong><small>px</small></div></div>
@@ -109,6 +109,8 @@
             <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.7" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>
             Copy Coordinates
           </button>
+          <button id="download-template" class="action-secondary" type="button">Download template.xml</button>
+          <button id="download-package" class="action-primary" type="button">Export LiveArea Assets (.zip)</button>
           <button id="reset-geometry" class="action-reset" type="button">Reset Position <span aria-hidden="true">↺</span></button>
         </div>
       </section>
@@ -129,7 +131,7 @@
             <div class="asset-topline">
               <div class="asset-thumb" id="card-thumb"><span class="asset-thumb-icon" aria-hidden="true">▧</span></div>
               <div class="asset-name"><strong>Card</strong><span id="card-filename" title="No file selected">No image selected</span></div>
-              <span class="asset-tag">840 × 480</span>
+              <span class="asset-tag">840 × 500</span>
             </div>
             <div class="asset-buttons">
               <button type="button" class="asset-upload" id="card-upload">+ Upload PNG / JPG</button>
@@ -149,6 +151,43 @@
             </div>
             <input id="button-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
           </div>
+          <div class="asset-card" id="gate-drop">
+            <div class="asset-topline">
+              <div class="asset-thumb" id="gate-thumb"><span class="asset-thumb-icon" aria-hidden="true">▣</span></div>
+              <div class="asset-name"><strong>Gate startup image (fixed)</strong><span id="gate-filename" title="No file selected">No image selected</span></div>
+              <span class="asset-tag">280 × 158</span>
+            </div>
+            <div class="asset-buttons">
+              <button type="button" class="asset-upload" id="gate-upload">+ Upload PNG / JPG</button>
+              <button type="button" class="asset-clear" id="gate-clear" aria-label="Remove gate image">Remove</button>
+            </div>
+            <input id="gate-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
+          </div>
+          <details class="extra-assets"><summary>Additional LiveArea assets (optional)</summary>
+            <div class="asset-card" id="icon-drop">
+              <div class="asset-topline"><div class="asset-thumb" id="icon-thumb"><span class="asset-thumb-icon">▧</span></div>
+                <div class="asset-name"><strong>Bubble icon (icon0.png)</strong><span id="icon-filename">No image selected</span></div>
+                <span class="asset-tag">128 × 128</span></div>
+              <div class="asset-buttons"><button type="button" class="asset-upload" id="icon-upload">+ Upload</button><button type="button" class="asset-clear" id="icon-clear">Remove</button></div>
+              <input id="icon-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
+            </div>
+            <div class="asset-card" id="boot-drop">
+              <div class="asset-topline"><div class="asset-thumb" id="boot-thumb"><span class="asset-thumb-icon">▧</span></div>
+                <div class="asset-name"><strong>Bootscreen (pic0.png)</strong><span id="boot-filename">No image selected</span></div>
+                <span class="asset-tag">960 × 544</span></div>
+              <div class="asset-buttons"><button type="button" class="asset-upload" id="boot-upload">+ Upload</button><button type="button" class="asset-clear" id="boot-clear">Remove</button></div>
+              <input id="boot-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
+            </div>
+            <div class="asset-card" id="manual-drop">
+              <div class="asset-name"><strong>Optional manual pages</strong><span id="manual-count">No pages selected</span></div>
+              <div class="asset-buttons">
+                <button type="button" class="asset-upload" id="manual-upload">+ Add PNG/JPG pages</button>
+                <button type="button" class="asset-clear" id="manual-clear">Remove</button>
+              </div>
+              <input id="manual-file" type="file" multiple accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
+              <p class="section-note">Up to 10 pages. Exported as sce_sys/manual/001.png, 002.png, etc.</p>
+            </div>
+          </details>
           <p class="section-note">Drag and drop files here, or select them from your device. Transparent PNGs supported; up to 2048 × 2048 px and 12 MiB per image.</p>
         </section>
 
@@ -167,17 +206,34 @@
 
         <section class="inspector-section inspector-geometry" aria-labelledby="geometry-title">
           <div class="subhead"><span class="sub-number">03</span><h3 id="geometry-title">Geometry</h3><span class="sub-rule"></span></div>
-          <p class="geometry-caption">Coordinates are relative to the card's top-left corner.</p>
+          <p class="geometry-caption">The card center is (0, 0). Left/up are negative; right/down are positive. All positions stay below the reserved top strip.</p>
           <div class="geometry-inputs">
-            <label class="field"><span>X <small>HORIZONTAL</small></span><div class="input-container"><input id="input-x" type="number" min="0" max="816" step="1" inputmode="numeric" value="276"><span>px</span></div></label>
-            <label class="field"><span>Y <small>VERTICAL</small></span><div class="input-container"><input id="input-y" type="number" min="0" max="456" step="1" inputmode="numeric" value="112"><span>px</span></div></label>
+            <label class="field"><span>X <small>FROM CENTER</small></span><div class="input-container"><input id="input-x" type="number" min="-420" max="420" step="1" inputmode="numeric" value="-1"><span>px</span></div></label>
+            <label class="field"><span>Y <small>FROM CENTER</small></span><div class="input-container"><input id="input-y" type="number" min="-250" max="250" step="1" inputmode="numeric" value="-54"><span>px</span></div></label>
             <label class="field"><span>W <small>WIDTH</small></span><div class="input-container"><input id="input-w" type="number" min="24" max="840" step="1" inputmode="numeric" value="286"><span>px</span></div></label>
-            <label class="field"><span>H <small>HEIGHT</small></span><div class="input-container"><input id="input-h" type="number" min="24" max="480" step="1" inputmode="numeric" value="168"><span>px</span></div></label>
+            <label class="field"><span>H <small>HEIGHT</small></span><div class="input-container"><input id="input-h" type="number" min="24" max="456" step="1" inputmode="numeric" value="168"><span>px</span></div></label>
           </div>
+          <label class="editor-check"><input type="checkbox" id="lock-aspect"><span>Lock aspect ratio <small>Preserve image proportions while resizing</small></span></label>
+          <label class="editor-check"><input type="checkbox" id="transparent-button"><span>Transparent button background <small>Preserve PNG alpha instead of filling with a preset color</small></span></label>
           <div class="derived-coordinates">
             <div><span>RIGHT OFFSET</span><strong><output id="offset-right">278</output> <small>px</small></strong></div>
             <div><span>BOTTOM OFFSET</span><strong><output id="offset-bottom">200</output> <small>px</small></strong></div>
           </div>
+        </section>
+        <section class="inspector-section" aria-labelledby="xml-title">
+          <div class="subhead"><span class="sub-number">04</span><h3 id="xml-title">LiveArea template.xml</h3><span class="sub-rule"></span></div>
+          <div class="xml-settings">
+            <label class="field"><span>LAYOUT STYLE</span><select id="xml-style"><option value="a1">a1 (centered gate)</option><option value="a2">a2</option><option value="a3">a3</option><option value="a4">a4</option><option value="a5">a5</option><option value="ad0">ad0</option><option value="ad1">ad1</option><option value="ad2">ad2</option><option value="ad3">ad3</option><option value="ad4">ad4</option><option value="browser">browser</option><option value="content_manager">content_manager</option><option value="kids">kids</option><option value="music">music</option><option value="nsx1">nsx1</option><option value="ps1emu">ps1emu</option><option value="psmobile">psmobile (right gate)</option><option value="pspemu">pspemu</option><option value="vd">vd</option></select></label>
+            <label class="field"><span>LIVEITEM FRAME</span><select id="xml-frame"><option value="1">frame1</option><option value="2">frame2</option><option value="3">frame3</option></select></label>
+            <label class="field"><span>LINK TARGET (URL / VITA URI)</span><input id="xml-target" type="text" maxlength="240" value="https://example.com" spellcheck="false"></label>
+            <label class="field"><span>OPTIONAL FRAME TEXT</span><input id="xml-text" type="text" maxlength="160" placeholder="Optional text"></label>
+            <label class="field"><span>LANGUAGE</span><select id="xml-lang"><option value="">All languages</option><option value="en">English</option><option value="ja">Japanese</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">German</option><option value="it">Italian</option><option value="pt">Portuguese</option><option value="ko">Korean</option><option value="ru">Russian</option></select></label>
+            <label class="field"><span>AGE LIMIT</span><input id="xml-age" type="number" min="0" max="18" value="0" inputmode="numeric"></label>
+          </div>
+          <label class="editor-check"><input id="xml-vita-only" type="checkbox"><span>Restrict this liveitem to PS Vita <small>Include model=vita</small></span></label>
+          <label class="editor-check"><input id="xml-autoflip" type="checkbox"><span>Frame autoflip <small>Useful when adding multiple liveitems manually</small></span></label>
+          <p class="section-note">The gate and frame positions are fixed by the selected system layout. Frame X/Y values in the generated XML are <strong>frame-relative estimates</strong>; test them on a real PS Vita. Export includes palette-indexed PNG assets.</p>
+          <button id="download-package-side" type="button" class="asset-upload export-side">Export template.xml + Vita PNGs (.zip)</button>
         </section>
         <div class="storage-note">
           <div class="storage-indicator"><span class="storage-light"></span><strong id="storage-status">Saved in this browser</strong></div>

@@ -1,102 +1,102 @@
 # LiveArea Designer
 
-**LiveArea Designer v1.11 (PS Vita homebrew, experimental pre-release)**
+**PS Vita LiveArea editor — v1.20 experimental preview.** Open-source C/SDL2 homebrew and a matching static web editor.
 
-A lightweight native SDL2 homebrew for prototyping PS Vita LiveArea card and button layouts. Position and resize a button in pixel units relative to the card, import independent card/button images and choose solid-color presets. No VitaGL/Aurora-Vita dependency is required.
+[**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
-**Download:** [GitHub releases](https://github.com/robin994/LiveAreaDesigner/releases) (download `LIVAREA01.vpk` from the v1.11 release assets).
+## What it does
 
-## Web editor — GitHub Pages
+LiveArea Designer helps homebrew authors prototype the images and layout of a PS Vita LiveArea page. The simulator has a **960 × 544** screen and a **840 × 500** card whose top 44 pixels are reserved for system controls. The editable **frame image/button** stays out of that area.
 
-**[Open LiveArea Designer online](https://robin994.github.io/LiveAreaDesigner/)**
+- Position/resize an image with touch, mouse, D-pad or numeric inputs.
+- **Signed coordinates relative to the center of the card:** (0, 0) at the center; left/up negative, right/down positive.
+- **Fixed aspect ratio** mode to prevent image distortion.
+- **Transparent button background** mode. Transparent PNG pixels remain transparent in the indexed PNG8 export; JPG content remains opaque.
+- Import PNG/JPG for the card background, movable frame button, fixed startup gate, plus optional bubble icon and bootscreen.
+- Pick ten default colors and display frame sizes/offsets.
+- Choose one LiveArea style and frame, with optional target URI, text, language restriction, age limit, Vita-only model and autoflip (see notes below).
+- Save **template.xml** and an accompanying export of **8-bit indexed PNG assets** (up to 225 palette entries including a transparent slot).
+- Add optional **manual pages**, packaged in numerical order starting at `sce_sys/manual/001.png`.
 
-The static web edition in [`docs/`](docs/) offers the same core layout functionality as the PS Vita homebrew:
+The preview is a design aid, **not** a pixel-perfect emulation of the system's fixed gate and frame slots. In particular, moving the custom image in the editor does not move the actual startup gate; exported frame-image coordinates are relative to the chosen Vita frame, not the entire card. Test and adjust the XML on an actual PS Vita.
 
-- Canvas preview at **960 × 544**, with the sample card at **840 × 480** and a draggable/resizable button.
-- Accurate card-relative **X, Y, W, H**, plus derived right/bottom offsets.
-- Keyboard arrows for 1 px steps (hold **Shift** for 10 px); choose **Move** or **Resize**.
-- Native browser file selection or drag-and-drop for independent PNG/JPG card and button images (maximum 12 MB and 2048 × 2048 pixels each).
-- Independent 10-color palettes for card and button; live preview.
-- Automatic persistence of geometry/colors to browser storage, and imported image blobs to IndexedDB.
-- Additional web features: export a clean 960 × 544 PNG preview and copy coordinate values.
+## Web editor / GitHub Pages
 
-The site has **no backend** and does **not upload images**. Browsers can only open files explicitly chosen by the user, unlike the Vita's on-device file browser. Browser-local settings are not automatically synchronized to the native homebrew or to other devices. Use a modern desktop or mobile browser; the PS Vita's built-in browser is not a supported target.
+**https://robin994.github.io/LiveAreaDesigner/**
 
-The static site is published from `main` / `docs` using GitHub Pages, with no npm dependencies or build step.
+Everything runs in your browser; images never leave your computer. Choose PNG/JPG assets through the normal file picker or drag-and-drop. Layout settings use localStorage, images use IndexedDB. Supported on modern desktop and mobile browsers; the Vita's built-in browser is not a target.
 
-Web tests:
+The web app can download a standalone `template.xml` and **Export LiveArea Assets (.zip)**, which contains:
 
-```sh
-node --test tests/web-geometry.test.mjs
-# Optional full browser smoke test with local Google Chrome:
-node tests/web-browser-smoke.mjs
+```text
+sce_sys/
+  icon0.png           # optional, 128 x 128
+  pic0.png            # optional, 960 x 544
+  livearea/
+    contents/
+      template.xml
+      bg0.png          # 840 x 500, indexed PNG8
+      startup.png      # 280 x 158, indexed PNG8 with transparency
+      button.png       # selected frame dimensions, indexed PNG8, optional transparency
+  manual/
+    001.png            # optional, 960 x 544
+    002.png
 ```
 
-This is a visual editor/simulator, **not** a tool that installs or modifies system LiveArea layouts. The example card geometry is provisional and layout/XML export is not implemented yet.
+A gate is fixed by the chosen LiveArea style. For example, `a1` centers the startup image; `psmobile` places it to the right. Other styles listed in the tutorial include system-specific layouts whose additional built-in functionality may not work for third-party homebrew.
 
-## Installation
+The web app exports a single custom liveitem in the selected frame. A frame can link to a website or supported Vita URI using the `target` field. If you leave the default `https://example.com`, replace that URL before publishing your VPK.
 
-1. Download `LIVAREA01.vpk` from the [releases page](https://github.com/robin994/LiveAreaDesigner/releases).
-2. Copy it onto your PS Vita storage using VitaShell USB or FTP.
-3. Open the VPK in VitaShell and confirm installation.
-4. Start **LiveArea Designer** from the Vita LiveArea.
+PNG assets use a quantized indexed palette. Colors are approximated and alpha is binary (fully transparent or opaque) rather than full 8-bit per-pixel opacity. Optional `icon0.png` and `pic0.png` are exported only after an image is selected.
 
-Application title ID: `LIVAREA01`. Updating over an existing installation preserves `ux0:data/LiveAreaDesigner/settings.ini`.
+## PS Vita native homebrew
 
-Only the **front touchscreen** controls the editor and settings. The rear touchpad is disabled in SDL2 and any indirect touch events are ignored. A drag is tied to its initiating front finger so unrelated fingers cannot interrupt it.
+Install the `LIVAREA01.vpk` from [Releases](https://github.com/robin994/LiveAreaDesigner/releases). Title ID: `LIVAREA01`. A local config is saved to `ux0:data/LiveAreaDesigner/settings.ini`. Only the **front touchscreen** is accepted; the rear panel is ignored.
 
-## Settings: images and color presets
+### Controls
 
-Press **START** or tap **SETTINGS** on the top-right of the editor.
-
-- **Card Image > Browse:** choose a `.png`, `.jpg`, or `.jpeg` from the Vita filesystem.
-- **Button Image > Browse:** choose an independent image for the movable and resizable rectangle.
-- **Clear:** remove the selected card/button image and return to the selected solid color.
-- **Card Color / Button Color:** independently choose from 10 preset colors (Purple, Magenta, Blue, Cyan, Green, Yellow, Orange, Red, White, Slate) with the D-pad or by touching a swatch.
-- **Live Preview:** inspect the current card and button images, layout, and colors while editing settings.
-- **Save and Close:** persist the image paths, selected colors, and rectangle geometry to `ux0:data/LiveAreaDesigner/settings.ini`. Settings are also saved when leaving the screen or quitting the homebrew, not on every D-pad tick.
-
-For PNG transparency, the selected color appears underneath transparent pixels. An opaque image covers the selected solid color.
-
-The browser starts with the storage volumes that are accessible on the console (`ux0:`, `uma0:`, `imc0:`, `ur0:`, etc.). It lists directories and PNG/JPG files only. Use **X** to enter/select, **O** to go up, or **Triangle** to cancel. Touch selection is supported.
-
-To add images conveniently, connect to VitaShell FTP and upload assets to a folder such as `ux0:data/LiveAreaDesigner/assets/` (create the `assets` subfolder first). Then open it through Settings > Browse. The homebrew does not move, edit, or delete your source images.
-
-**Image limits:** maximum 12 MiB on disk, maximum 2048 x 2048 px per image. Larger or unreadable images are rejected; a previously loaded image is kept if a replacement fails.
-
-## Coordinate system
-
-- PS Vita display: **960 x 544** physical pixels.
-- Sample card: screen `(60,44)`, size **840 x 480** pixels. These are POC placeholders until we select the exact LiveArea template and its official geometry.
-- Button rectangle (`x`, `y`, `w`, `h`) uses **card-relative** pixels, with `(0,0)` at the top-left of the card.
-- Right offset = `840 - x - w`; bottom offset = `480 - y - h`.
-- Rectangle movement and resize are constrained to the card.
-
-## Controls
-
-| Control | Action |
-|---|---|
-| Touch and drag within rectangle | Move |
-| Touch and drag yellow bottom-right grip | Resize |
+| Input | Action |
+| --- | --- |
+| Front touch / drag | Move the frame image |
+| Front touch / yellow grip | Resize |
 | Triangle | Toggle Move / Resize |
-| D-pad | Edit X/Y or W/H by 1 px |
-| Hold R + D-pad | Edit by 10 px |
-| Start / top-right Settings | Open settings |
-| Circle (editor) | Save and exit |
-| Settings D-pad Up/Down | Select row |
-| Settings D-pad Left/Right | Change preset on a color row |
-| Settings X / Circle | Select / close and save |
-| Settings Square on image row | Clear the chosen image |
-| File browser D-pad + X / Circle | Navigate + enter / go up |
-| File browser Triangle | Cancel image selection |
-| Desktop mouse | Drag / resize |
-| Desktop F1, Tab, arrows, Enter, Escape | Settings, editor mode, navigate, select, go back |
+| D-pad | Move or resize by 1 pixel |
+| Hold R + D-pad | Change by 10 pixels |
+| Start | Open/close Settings |
+| L / R in Settings | Switch between Colors and XML + Assets tabs |
+| D-pad + Cross | Navigate / select options / browse |
+| Square on image row | Clear image |
+| Cross on XML + Assets > Export | Save XML and PNG8 assets |
+| XML + Assets > Select Manual Folder | Browse to a directory; press **Square** to use it |
+| Circle | Back / save / exit |
 
-The top HUD shows **X, Y, W, H, R, B** in real pixels. The lower HUD indicates the current control mode. The initial card art is a placeholder; importing a custom card image replaces it in the preview.
+In the XML + Assets tab, select gate, icon0 and pic0 images, LiveArea style, frame, aspect-lock and transparency options. Frame link, text, language, age, Vita-only and autoflip are loaded/saved in the editable `settings.ini` keys:
+
+```ini
+frame_target=https://example.com
+frame_text=
+frame_lang=
+age_limit=0
+vita_only=0
+autoflip=0
+```
+
+**Native export destination:**
+
+```text
+ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/template.xml
+ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/bg0.png
+ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/startup.png
+ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/button.png
+```
+
+Optional `icon0.png`, `pic0.png` and `manual/001.png...` are saved alongside this folder tree. The native app does **not** change installed apps or the Vita's system LiveArea: copy the exported assets into your homebrew project, rebuild its VPK and install or refresh its LiveArea through normal developer workflows.
+
+**Image constraints:** maximum 12 MiB per imported PNG/JPG, dimensions no larger than 2048 × 2048. Assets are scaled into their required output size; keep your originals for best image quality. The XML is not a promise that an arbitrary chosen LiveArea style has a usable frame at every position.
 
 ## Build from source
 
-Prerequisites: **VitaSDK**, CMake (3.16+), VitaSDK SDL2 and SDL2_image with PNG/JPEG/WebP, zlib and pthread static dependencies. macOS/Linux with the VitaSDK cross-toolchain is supported as a build environment.
+Requirements: VitaSDK, CMake >= 3.16, SDL2, SDL2_image, libpng, libjpeg, zlib, pthread, WebP static dependencies.
 
 ```sh
 git clone https://github.com/robin994/LiveAreaDesigner.git
@@ -106,20 +106,31 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (Title ID `LIVAREA01`, version `01.11`). The VitaSDK build has been verified; the newest touch-input change has not yet been independently validated on console.
+Output: `build/LIVAREA01.vpk` (v1.20). Hardware validation of frame positioning and the newly added native PNG8 encoder is still required.
 
-## Host smoke test (filesystem/navigation only)
+Tests:
 
 ```sh
+node --test tests/web-geometry.test.mjs
+node tests/web-browser-smoke.mjs  # Requires Google Chrome
 mkdir -p build/host-test
+clang -std=c99 -Wall -Wextra -Werror -Isrc src/exporter_xml.c tests/exporter_xml_smoke.c -o build/host-test/exporter_xml_smoke
+build/host-test/exporter_xml_smoke
 clang -std=c99 -Wall -Wextra -Werror -Itests/mocks -Isrc src/assets.c tests/assets_smoke.c -o build/host-test/assets_smoke
 build/host-test/assets_smoke
 ```
 
-## Next steps
+## Reference material
 
-Use exact geometry from the chosen LiveArea template, support multiple buttons, and export positioning data to a LiveArea layout format after validating its schema.
+- [Hackinformer (Freakler): How to create a custom Livearea screen for your Homebrew](https://web.archive.org/web/20250126023851/https://forum.hackinformer.com/viewtopic.php?t=765)
+- [PS Vita Developer Wiki: template.xml](https://www.psdevwiki.com/vita/Template.xml)
+- [LiveArea image specifications](https://gist.github.com/Hammerill/64411eebf071b93396b7d310ba8d6776)
 
-## License
+## Roadmap / limitations
 
-[MIT](LICENSE). This independent homebrew is not affiliated with Sony Interactive Entertainment.
+- Account for the **actual fixed frame slots** and gate position for every template style rather than treating the card as an arbitrary-position canvas.
+- Support multiple independently editable liveitems and language variants; a single liveitem with `autoflip` has no meaningful automatic rotation on its own.
+- Add on-device text/target editing rather than requiring direct edits to `settings.ini`.
+- Validate indexed PNGs and installed XML on real hardware and update compatibility notes.
+
+[MIT license](LICENSE). Independent homebrew; not affiliated with Sony Interactive Entertainment.

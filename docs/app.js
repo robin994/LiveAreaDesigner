@@ -1,8 +1,10 @@
 import {
-  SCREEN, CARD, PALETTE, DEFAULT_LAYOUT,
+  SCREEN, CARD, RESERVED_TOP, PALETTE, DEFAULT_LAYOUT, centeredOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
 } from "./geometry.mjs";
+import { generateTemplate } from "./template.mjs";
+import { buildLiveAreaPackage } from "./package.mjs";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";
@@ -33,7 +35,7 @@ const state = {
   layout: normalizeLayout(stored?.layout ?? DEFAULT_LAYOUT),
   mode: stored?.mode === "resize" ? "resize" : "move",
   guides: stored?.guides !== false,
-  images: { card: null, button: null },
+  images: { card: null, button: null, gate: null, icon: null, boot: null, manual: [] },
   drag: null
 };
 let drawScheduled = false;
@@ -154,6 +156,15 @@ function replaceImage(target, loaded) {
   state.images[target] = loaded;
   if (previous) URL.revokeObjectURL(previous.url);
   updateAssetUI(target);
+  if (target === "button" && loaded?.image) {
+    const ratio = loaded.image.naturalWidth / loaded.image.naturalHeight;
+    if (state.layout.lockAspect) {
+      const next = { ...state.layout, aspectRatio: ratio };
+      setLayout(dragLayout(next, 0, Math.round(next.w / ratio) - next.h, "resize"));
+    } else {
+      setLayout({ ...state.layout, aspectRatio: ratio });
+    }
+  }
   scheduleDraw();
 }
 
@@ -191,7 +202,7 @@ async function clearImage(target) {
 }
 
 async function restoreImages() {
-  for (const target of ["card", "button"]) {
+  for (const target of ["card", "button", "gate", "icon", "boot"]) {
     try {
       const saved = await assetOperation("get", target);
       if (!saved?.blob || !saved.name) continue;
@@ -202,6 +213,58 @@ async function restoreImages() {
       console.warn(`Saved ${target} image is unavailable:`, error);
     }
   }
+  try {
+    const items = await assetOperation("get", "manual");
+    if (Array.isArray(items) && items.length <= 10) {
+      const pages = [];
+      for (const item of items) {
+        await validateFile(new File([item.blob], item.name, { type: item.blob.type }));
+        pages.push(await imageDimensions(item.blob, item.name));
+      }
+      state.images.manual = pages;
+      updateManualCount();
+    }
+  } catch (error) {
+    console.warn("Unable to restore saved manual pages:", error);
+  }
+}
+
+function updateManualCount() {
+  const pages = state.images.manual;
+  document.getElementById("manual-count").textContent =
+    pages.length ? `${pages.length} pages: ${pages.map(page => page.name).join(", ")}` : "No pages selected";
+  document.getElementById("manual-clear").disabled = pages.length === 0;
+}
+
+async function selectManual(files) {
+  const inputs = Array.from(files || []);
+  if (inputs.length === 0) return;
+  if (inputs.length > 10) { notice("Select up to 10 manual pages."); return; }
+  const pages = [];
+  try {
+    for (const file of inputs) {
+      await validateFile(file);
+      pages.push(await imageDimensions(file, file.name));
+    }
+    pages.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const old = state.images.manual;
+    state.images.manual = pages;
+    old.forEach(page => URL.revokeObjectURL(page.url));
+    updateManualCount();
+    await assetOperation("put", "manual", pages.map(page => ({ name: page.name, blob: page.blob })));
+    notice(`${pages.length} manual pages saved.`);
+  } catch (error) {
+    if (state.images.manual !== pages) pages.forEach(page => URL.revokeObjectURL(page.url));
+    notice(error.message || "Unable to import manual pages.");
+  }
+}
+
+async function clearManual() {
+  for (const page of state.images.manual) URL.revokeObjectURL(page.url);
+  state.images.manual = [];
+  updateManualCount();
+  try { await assetOperation("delete", "manual"); } catch { status("Local storage unavailable", false); }
+  notice("Manual pages removed.");
 }
 
 function updateAssetUI(target) {
@@ -237,8 +300,9 @@ function buildPalette(target) {
 function updateInterface() {
   const layout = state.layout;
   const margin = offsets(layout);
+  const center = centeredOffsets(layout);
   const measures = {
-    x: layout.x, y: layout.y, w: layout.w, h: layout.h,
+    x: center.x, y: center.y, w: layout.w, h: layout.h,
     right: margin.right, bottom: margin.bottom
   };
   for (const [key, value] of Object.entries(measures)) {
@@ -247,12 +311,32 @@ function updateInterface() {
   document.getElementById("offset-right").textContent = String(margin.right);
   document.getElementById("offset-bottom").textContent = String(margin.bottom);
   for (const [key, input] of Object.entries(fields)) {
-    if (document.activeElement !== input) input.value = layout[key];
+    if (document.activeElement !== input)
+      input.value = key === "x" || key === "y" ? center[key] : layout[key];
   }
-  fields.x.max = String(CARD.width - layout.w);
-  fields.y.max = String(CARD.height - layout.h);
+  fields.x.min = String(Math.round(layout.w / 2 - CARD.width / 2));
+  fields.x.max = String(Math.round(CARD.width / 2 - layout.w / 2));
+  fields.y.min = String(Math.round(RESERVED_TOP + layout.h / 2 - CARD.height / 2));
+  fields.y.max = String(Math.round(CARD.height / 2 - layout.h / 2));
   fields.w.max = String(CARD.width - layout.x);
   fields.h.max = String(CARD.height - layout.y);
+  document.getElementById("lock-aspect").checked = layout.lockAspect;
+  document.getElementById("transparent-button").checked = layout.transparentButton;
+  for (const [id, value] of Object.entries({
+    "xml-style": layout.templateStyle,
+    "xml-frame": String(layout.frameId),
+    "xml-target": layout.frameTarget,
+    "xml-text": layout.frameText,
+    "xml-lang": layout.frameLang,
+    "xml-age": String(layout.ageLimit),
+    "xml-vita-only": layout.vitaOnly,
+    "xml-autoflip": layout.autoFlip
+  })) {
+    const element = document.getElementById(id);
+    if (document.activeElement === element) continue;
+    if (element.type === "checkbox") element.checked = value;
+    else element.value = value;
+  }
 
   for (const target of ["card", "button"]) {
     const index = layout[target === "card" ? "cardColor" : "buttonColor"];
@@ -262,6 +346,7 @@ function updateInterface() {
     });
     updateAssetUI(target);
   }
+  for (const target of ["gate", "icon", "boot"]) updateAssetUI(target);
 
   elements.move.classList.toggle("is-active", state.mode === "move");
   elements.resize.classList.toggle("is-active", state.mode === "resize");
@@ -334,6 +419,15 @@ function renderGuides(ctx2d, rect, layout) {
   ctx2d.lineTo(midX, CARD.y + CARD.height);
   ctx2d.stroke();
   ctx2d.restore();
+  ctx2d.strokeStyle = "#a0e7f68c";
+  ctx2d.setLineDash([6, 6]);
+  ctx2d.beginPath();
+  ctx2d.moveTo(CARD.x + CARD.width / 2, CARD.y + RESERVED_TOP);
+  ctx2d.lineTo(CARD.x + CARD.width / 2, CARD.y + CARD.height);
+  ctx2d.moveTo(CARD.x, CARD.y + CARD.height / 2);
+  ctx2d.lineTo(CARD.x + CARD.width, CARD.y + CARD.height / 2);
+  ctx2d.stroke();
+  ctx2d.setLineDash([]);
 
   if (margin.left >= 65) measurementLabel(ctx2d, `${margin.left} px`, CARD.x + margin.left / 2, midY);
   if (margin.right >= 65) measurementLabel(ctx2d, `${margin.right} px`, rect.x + rect.w + margin.right / 2, midY);
@@ -396,15 +490,36 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
   ctx2d.lineWidth = 2;
   ctx2d.strokeRect(CARD.x + 1, CARD.y + 1, CARD.width - 2, CARD.height - 2);
 
+  // System update/manual controls occupy the top 44px of the card.
+  if (guides) {
+    ctx2d.fillStyle = "#11182ab7";
+    ctx2d.fillRect(CARD.x + 2, CARD.y + 2, CARD.width - 4, RESERVED_TOP - 2);
+    ctx2d.fillStyle = "#e8e6f6";
+    ctx2d.font = '600 12px "Space Grotesk", sans-serif';
+    ctx2d.textAlign = "right";
+    ctx2d.fillText("SYSTEM CONTROLS  /  44 PX RESERVED", CARD.x + CARD.width - 18, CARD.y + 25);
+    ctx2d.strokeStyle = "#ffbd64a0";
+    ctx2d.setLineDash([5, 4]);
+    ctx2d.beginPath();
+    ctx2d.moveTo(CARD.x, CARD.y + RESERVED_TOP);
+    ctx2d.lineTo(CARD.x + CARD.width, CARD.y + RESERVED_TOP);
+    ctx2d.stroke();
+    ctx2d.setLineDash([]);
+  }
+
   if (guides) renderGuides(ctx2d, rect, layout);
 
-  ctx2d.fillStyle = PALETTE[layout.buttonColor].hex;
-  ctx2d.fillRect(rect.x, rect.y, rect.w, rect.h);
+  if (!layout.transparentButton) {
+    ctx2d.fillStyle = PALETTE[layout.buttonColor].hex;
+    ctx2d.fillRect(rect.x, rect.y, rect.w, rect.h);
+  }
   if (state.images.button?.image) {
     ctx2d.drawImage(state.images.button.image, rect.x, rect.y, rect.w, rect.h);
   } else {
-    ctx2d.fillStyle = "#ffffff13";
-    ctx2d.fillRect(rect.x, rect.y, rect.w, rect.h);
+    if (!layout.transparentButton) {
+      ctx2d.fillStyle = "#ffffff13";
+      ctx2d.fillRect(rect.x, rect.y, rect.w, rect.h);
+    }
     ctx2d.fillStyle = "#fff5ff";
     ctx2d.textAlign = "left";
     ctx2d.textBaseline = "alphabetic";
@@ -443,7 +558,8 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
     ctx2d.textBaseline = "middle";
     ctx2d.font = '600 13px "Space Grotesk", sans-serif';
     ctx2d.fillStyle = "#f6eeff";
-    ctx2d.fillText(`X:${layout.x}  Y:${layout.y}  W:${layout.w}  H:${layout.h}  R:${offsets(layout).right}  B:${offsets(layout).bottom}`, 16, 16);
+    const center = centeredOffsets(layout);
+    ctx2d.fillText(`X:${center.x}  Y:${center.y}  W:${layout.w}  H:${layout.h}  R:${offsets(layout).right}  B:${offsets(layout).bottom}`, 16, 16);
     ctx2d.font = '600 12px "Space Grotesk", sans-serif';
     ctx2d.fillStyle = "#ffd988";
     ctx2d.fillText(state.mode === "move" ? "MODE: MOVE" : "MODE: RESIZE", 16, SCREEN.height - 13);
@@ -474,8 +590,39 @@ function downloadImage() {
   }, "image/png");
 }
 
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+
+function downloadTemplate() {
+  downloadBlob(new Blob([generateTemplate(state.layout)], { type: "application/xml;charset=utf-8" }), "template.xml");
+  notice("template.xml downloaded. Export the ZIP for its referenced assets.");
+}
+
+async function downloadPackage() {
+  const buttons = [elements.package, document.getElementById("download-package-side")];
+  for (const button of buttons) button.disabled = true;
+  try {
+    const pack = await buildLiveAreaPackage(state.layout, state.images);
+    downloadBlob(pack, "LiveAreaDesigner-assets.zip");
+    notice("LiveArea ZIP exported with indexed PNGs and template.xml.");
+  } catch (error) {
+    notice(error.message || "Unable to export LiveArea assets.");
+  } finally {
+    for (const button of buttons) button.disabled = false;
+  }
+}
+
 async function copyCoordinates() {
-  const { x, y, w, h } = state.layout;
+  const { w, h } = state.layout;
+  const { x, y } = centeredOffsets(state.layout);
   const { right, bottom } = offsets(state.layout);
   const text = `X=${x}, Y=${y}, W=${w}, H=${h}, RIGHT=${right}, BOTTOM=${bottom}`;
   try {
@@ -504,6 +651,10 @@ function bindEditor() {
     scheduleDraw();
   });
   elements.export.addEventListener("click", downloadImage);
+  elements.package = document.getElementById("download-package");
+  document.getElementById("download-template").addEventListener("click", downloadTemplate);
+  elements.package.addEventListener("click", downloadPackage);
+  document.getElementById("download-package-side").addEventListener("click", downloadPackage);
   elements.copy.addEventListener("click", copyCoordinates);
   elements.reset.addEventListener("click", () => {
     const { cardColor, buttonColor } = state.layout;
@@ -511,18 +662,57 @@ function bindEditor() {
     notice("Position and dimensions reset.");
   });
 
+  const editGeometry = (key, raw) => {
+    const number = Number(raw);
+    if (!Number.isFinite(number)) return;
+    if (key === "x" || key === "y") {
+      const position = key === "x"
+        ? Math.round(number + CARD.width / 2 - state.layout.w / 2)
+        : Math.round(number + CARD.height / 2 - state.layout.h / 2);
+      setLayout({ ...state.layout, [key]: position });
+    } else if (state.layout.lockAspect) {
+      setLayout(dragLayout(state.layout, key === "w" ? number - state.layout.w : 0,
+        key === "h" ? number - state.layout.h : 0, "resize"));
+    } else {
+      const next = { ...state.layout, [key]: number };
+      setLayout(next);
+    }
+  };
   for (const [key, input] of Object.entries(fields)) {
     input.addEventListener("input", () => {
       if (input.value.trim() === "") return;
-      const value = Number(input.value);
-      if (Number.isFinite(value)) setLayout({ ...state.layout, [key]: value });
+      editGeometry(key, input.value);
     });
     input.addEventListener("change", () => {
       if (input.value.trim() !== "") {
-        const value = Number(input.value);
-        if (Number.isFinite(value)) setLayout({ ...state.layout, [key]: value });
+        editGeometry(key, input.value);
       }
-      input.value = state.layout[key];
+      input.value = key === "x" || key === "y" ? centeredOffsets(state.layout)[key] : state.layout[key];
+    });
+  }
+  document.getElementById("lock-aspect").addEventListener("change", event => {
+    const ratio = state.images.button?.image
+      ? state.images.button.image.naturalWidth / state.images.button.image.naturalHeight
+      : state.layout.w / state.layout.h;
+    setLayout({ ...state.layout, lockAspect: event.target.checked, aspectRatio: ratio });
+  });
+  document.getElementById("transparent-button").addEventListener("change", event => {
+    setLayout({ ...state.layout, transparentButton: event.target.checked });
+  });
+  for (const [id, key] of Object.entries({
+    "xml-style": "templateStyle",
+    "xml-frame": "frameId",
+    "xml-target": "frameTarget",
+    "xml-text": "frameText",
+    "xml-lang": "frameLang",
+    "xml-age": "ageLimit",
+    "xml-vita-only": "vitaOnly",
+    "xml-autoflip": "autoFlip"
+  })) {
+    const input = document.getElementById(id);
+    input.addEventListener(input.type === "text" ? "change" : "input", () => {
+      const value = input.type === "checkbox" ? input.checked : input.value;
+      setLayout({ ...state.layout, [key]: value });
     });
   }
 
@@ -586,7 +776,7 @@ function bindEditor() {
 }
 
 function bindAssets() {
-  for (const target of ["card", "button"]) {
+  for (const target of ["card", "button", "gate", "icon", "boot"]) {
     const fileInput = document.getElementById(`${target}-file`);
     const dropzone = document.getElementById(`${target}-drop`);
     document.getElementById(`${target}-upload`).addEventListener("click", () => fileInput.click());
@@ -609,8 +799,24 @@ function bindAssets() {
       dropzone.classList.remove("dragover");
       chooseImage(target, event.dataTransfer?.files?.[0]);
     });
-    buildPalette(target);
+    if (target === "card" || target === "button") buildPalette(target);
   }
+  const manualFile = document.getElementById("manual-file");
+  document.getElementById("manual-upload").addEventListener("click", () => manualFile.click());
+  document.getElementById("manual-clear").addEventListener("click", clearManual);
+  manualFile.addEventListener("change", () => {
+    selectManual(manualFile.files);
+    manualFile.value = "";
+  });
+  const dropzone = document.getElementById("manual-drop");
+  dropzone.addEventListener("dragover", event => {
+    if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+  });
+  dropzone.addEventListener("drop", event => {
+    event.preventDefault();
+    selectManual(event.dataTransfer?.files);
+  });
+  updateManualCount();
 }
 
 if (ctx) {
@@ -624,8 +830,9 @@ if (ctx) {
 }
 
 window.addEventListener("pagehide", () => {
-  for (const target of ["card", "button"]) {
+  for (const target of ["card", "button", "gate", "icon", "boot"]) {
     const image = state.images[target];
     if (image) URL.revokeObjectURL(image.url);
   }
+  for (const page of state.images.manual) URL.revokeObjectURL(page.url);
 });

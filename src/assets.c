@@ -35,6 +35,10 @@ void designer_defaults(DesignerConfig *cfg) {
     cfg->h = 168;
     cfg->card_color = 0;
     cfg->button_color = 1;
+    cfg->aspect_width = 286;
+    cfg->aspect_height = 168;
+    cfg->frame_id = 3;
+    snprintf(cfg->frame_target, sizeof(cfg->frame_target), "https://example.com");
 }
 
 void designer_load(DesignerConfig *cfg) {
@@ -54,10 +58,33 @@ void designer_load(DesignerConfig *cfg) {
         else if (strcmp(line, "h") == 0) cfg->h = atoi(eq);
         else if (strcmp(line, "card_color") == 0) cfg->card_color = atoi(eq);
         else if (strcmp(line, "button_color") == 0) cfg->button_color = atoi(eq);
+        else if (strcmp(line, "aspect_lock") == 0) cfg->aspect_lock = atoi(eq);
+        else if (strcmp(line, "aspect_width") == 0) cfg->aspect_width = atoi(eq);
+        else if (strcmp(line, "aspect_height") == 0) cfg->aspect_height = atoi(eq);
+        else if (strcmp(line, "transparent_button") == 0) cfg->transparent_button = atoi(eq);
+        else if (strcmp(line, "template_style") == 0) cfg->template_style = atoi(eq);
+        else if (strcmp(line, "frame_id") == 0) cfg->frame_id = atoi(eq);
+        else if (strcmp(line, "age_limit") == 0) cfg->age_limit = atoi(eq);
+        else if (strcmp(line, "vita_only") == 0) cfg->vita_only = atoi(eq);
+        else if (strcmp(line, "autoflip") == 0) cfg->autoflip = atoi(eq);
         else if (strcmp(line, "card_image") == 0 && strlen(eq) < sizeof(cfg->card_image))
             strcpy(cfg->card_image, eq);
         else if (strcmp(line, "button_image") == 0 && strlen(eq) < sizeof(cfg->button_image))
             strcpy(cfg->button_image, eq);
+        else if (strcmp(line, "gate_image") == 0 && strlen(eq) < sizeof(cfg->gate_image))
+            strcpy(cfg->gate_image, eq);
+        else if (strcmp(line, "icon_image") == 0 && strlen(eq) < sizeof(cfg->icon_image))
+            strcpy(cfg->icon_image, eq);
+        else if (strcmp(line, "boot_image") == 0 && strlen(eq) < sizeof(cfg->boot_image))
+            strcpy(cfg->boot_image, eq);
+        else if (strcmp(line, "manual_dir") == 0 && strlen(eq) < sizeof(cfg->manual_dir))
+            strcpy(cfg->manual_dir, eq);
+        else if (strcmp(line, "frame_target") == 0 && strlen(eq) < sizeof(cfg->frame_target))
+            strcpy(cfg->frame_target, eq);
+        else if (strcmp(line, "frame_text") == 0 && strlen(eq) < sizeof(cfg->frame_text))
+            strcpy(cfg->frame_text, eq);
+        else if (strcmp(line, "frame_lang") == 0 && strlen(eq) < sizeof(cfg->frame_lang))
+            strcpy(cfg->frame_lang, eq);
     }
     fclose(f);
 }
@@ -68,9 +95,15 @@ bool designer_save(const DesignerConfig *cfg) {
     if (!f) return false;
     int ok = fprintf(f,
         "x=%d\ny=%d\nw=%d\nh=%d\ncard_color=%d\nbutton_color=%d\n"
-        "card_image=%s\nbutton_image=%s\n",
+        "aspect_lock=%d\naspect_width=%d\naspect_height=%d\ntransparent_button=%d\n"
+        "template_style=%d\nframe_id=%d\nage_limit=%d\nvita_only=%d\nautoflip=%d\n"
+        "card_image=%s\nbutton_image=%s\ngate_image=%s\nicon_image=%s\nboot_image=%s\nmanual_dir=%s\n"
+        "frame_target=%s\nframe_text=%s\nframe_lang=%s\n",
         cfg->x, cfg->y, cfg->w, cfg->h, cfg->card_color, cfg->button_color,
-        cfg->card_image, cfg->button_image);
+        cfg->aspect_lock, cfg->aspect_width, cfg->aspect_height, cfg->transparent_button,
+        cfg->template_style, cfg->frame_id, cfg->age_limit, cfg->vita_only, cfg->autoflip,
+        cfg->card_image, cfg->button_image, cfg->gate_image, cfg->icon_image,
+        cfg->boot_image, cfg->manual_dir, cfg->frame_target, cfg->frame_text, cfg->frame_lang);
     if (fflush(f) != 0) ok = -1;
     if (fclose(f) != 0) ok = -1;
     return ok > 0;

@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.20 - 2026-10-16 (pre-release)
+
+- Reworked PS Vita card geometry to 840 x 500 px with 44 px reserved at its top for system controls.
+- Signed center-based X/Y coordinates, updated on both website and native Vita editor.
+- Fixed-aspect-ratio resizing and transparent button background.
+- Indexed PNG8 asset exporter to make Vita-compatible `bg0.png`, `startup.png` and `button.png`.
+- Standard `template.xml` generator with layout style, native gate and one frame liveitem with XML-escaped link/text and optional restrictions.
+- Web editor: individual XML download, complete ZIP export, optional icon0, pic0, custom gate and manual page images.
+- Vita app: XML + Assets settings tab, file picker for gate/icon0/pic0, manual folder and export under `ux0:data/LiveAreaDesigner/export/`.
+- Added XML and ZIP unit/browser regression tests.
+- Frame positions are fixed by the PS Vita system; the freeform button overlay in the simulator is an approximation and must be validated on hardware.
+
 ## v1.11 - 2026-10-15 (pre-release)
 
 - Added filtering for the **front touchscreen** so the rear touchpad cannot interact with the editor.

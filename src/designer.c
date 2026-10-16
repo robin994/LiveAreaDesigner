@@ -1,4 +1,5 @@
 #include "assets.h"
+#include "exporter.h"
 #include "font.h"
 
 #include <SDL.h>
@@ -14,7 +15,8 @@
 #define CARD_X 60
 #define CARD_Y 44
 #define CARD_W 840
-#define CARD_H 480
+#define CARD_H 500
+#define SAFE_TOP 44
 #define MIN_SIZE 24
 #define BROWSER_ROWS 10
 #define BROWSER_Y 135
@@ -31,11 +33,13 @@ typedef struct {
     SDL_GameController *pad;
     SDL_Texture *card_texture;
     SDL_Texture *button_texture;
+    SDL_Texture *gate_texture;
     Font font;
     DesignerConfig cfg;
     FileBrowser browser;
     Screen screen;
     int setting_row;
+    int settings_tab;
     int browse_target;
     bool resize_mode;
     bool drag;
@@ -74,6 +78,31 @@ static const SDL_Color GOLD = {255, 222, 79, 255};
 static int clampi(int v, int lo, int hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
+static int roundi(float x) { return (int)(x + (x >= 0.0f ? 0.5f : -0.5f)); }
+static void constrain_size(App *a, Rect origin, int dw, int dh) {
+    const int max_w = CARD_W - origin.x;
+    const int max_h = CARD_H - origin.y;
+    if (a->cfg.aspect_lock && a->cfg.aspect_width > 0 && a->cfg.aspect_height > 0) {
+        const float ratio = (float)a->cfg.aspect_width / a->cfg.aspect_height;
+        int w, h;
+        if (abs(dw) * origin.h >= abs(dh) * origin.w) {
+            w = clampi(origin.w + dw, MIN_SIZE, max_w);
+            h = roundi(w / ratio);
+        } else {
+            h = clampi(origin.h + dh, MIN_SIZE, max_h);
+            w = roundi(h * ratio);
+        }
+        if (w > max_w) { w = max_w; h = roundi(w / ratio); }
+        if (h > max_h) { h = max_h; w = roundi(h * ratio); }
+        if (w < MIN_SIZE) { w = MIN_SIZE; h = roundi(w / ratio); }
+        if (h < MIN_SIZE) { h = MIN_SIZE; w = roundi(h * ratio); }
+        a->cfg.w = clampi(w, MIN_SIZE, max_w);
+        a->cfg.h = clampi(h, MIN_SIZE, max_h);
+    } else {
+        a->cfg.w = clampi(origin.w + dw, MIN_SIZE, max_w);
+        a->cfg.h = clampi(origin.h + dh, MIN_SIZE, max_h);
+    }
+}
 static bool hit(int px, int py, Rect rect) {
     return px >= rect.x && py >= rect.y &&
            px < rect.x + rect.w && py < rect.y + rect.h;
@@ -105,11 +134,17 @@ static void set_status(App *a, const char *message) {
 }
 static void normalize(App *a) {
     a->cfg.w = clampi(a->cfg.w, MIN_SIZE, CARD_W);
-    a->cfg.h = clampi(a->cfg.h, MIN_SIZE, CARD_H);
+    a->cfg.h = clampi(a->cfg.h, MIN_SIZE, CARD_H - SAFE_TOP);
     a->cfg.x = clampi(a->cfg.x, 0, CARD_W - a->cfg.w);
-    a->cfg.y = clampi(a->cfg.y, 0, CARD_H - a->cfg.h);
+    a->cfg.y = clampi(a->cfg.y, SAFE_TOP, CARD_H - a->cfg.h);
     a->cfg.card_color = clampi(a->cfg.card_color, 0, LAD_PALETTE_COUNT - 1);
     a->cfg.button_color = clampi(a->cfg.button_color, 0, LAD_PALETTE_COUNT - 1);
+    a->cfg.template_style = clampi(a->cfg.template_style, 0, LAD_STYLE_COUNT - 1);
+    a->cfg.frame_id = clampi(a->cfg.frame_id, 1, 3);
+    if (a->cfg.aspect_width <= 0 || a->cfg.aspect_height <= 0) {
+        a->cfg.aspect_width = a->cfg.w;
+        a->cfg.aspect_height = a->cfg.h;
+    }
 }
 static void save(App *a) {
     if (!a->dirty) return;
@@ -156,10 +191,31 @@ static bool load_texture(App *a, const char *path, SDL_Texture **out) {
     return true;
 }
 static void choose_image(App *a, const char *path) {
-    char *chosen = a->browse_target == 0 ? a->cfg.card_image : a->cfg.button_image;
-    SDL_Texture **tex = a->browse_target == 0 ?
-                         &a->card_texture : &a->button_texture;
+    char *chosen;
+    SDL_Texture **tex;
+    SDL_Texture *temp = NULL;
+    switch (a->browse_target) {
+    case 0: chosen = a->cfg.card_image; tex = &a->card_texture; break;
+    case 1: chosen = a->cfg.button_image; tex = &a->button_texture; break;
+    case 2: chosen = a->cfg.gate_image; tex = &a->gate_texture; break;
+    case 3: chosen = a->cfg.icon_image; tex = &temp; break;
+    default: chosen = a->cfg.boot_image; tex = &temp; break;
+    }
     if (!load_texture(a, path, tex)) return;
+    if (temp) SDL_DestroyTexture(temp);
+    if (a->browse_target == 1) {
+        SDL_Surface *source = IMG_Load(path);
+        if (source) {
+            a->cfg.aspect_width = source->w;
+            a->cfg.aspect_height = source->h;
+            if (a->cfg.aspect_lock) {
+                Rect rect = {a->cfg.x, a->cfg.y, a->cfg.w, a->cfg.h};
+                constrain_size(a, rect, 0, roundi(rect.w *
+                                               (float)source->h / source->w) - rect.h);
+            }
+            SDL_FreeSurface(source);
+        }
+    }
     snprintf(chosen, LAD_PATH_MAX, "%s", path);
     a->dirty = true;
     a->screen = SCREEN_SETTINGS;
@@ -169,9 +225,16 @@ static void clear_image(App *a, int target) {
     if (target == 0) {
         a->cfg.card_image[0] = '\0';
         load_texture(a, "", &a->card_texture);
-    } else {
+    } else if (target == 1) {
         a->cfg.button_image[0] = '\0';
         load_texture(a, "", &a->button_texture);
+    } else if (target == 2) {
+        a->cfg.gate_image[0] = '\0';
+        load_texture(a, "", &a->gate_texture);
+    } else if (target == 3) {
+        a->cfg.icon_image[0] = '\0';
+    } else {
+        a->cfg.boot_image[0] = '\0';
     }
     a->dirty = true;
     set_status(a, "IMAGE CLEARED");
@@ -190,10 +253,20 @@ static void browser_select(App *a) {
     char picked[LAD_PATH_MAX];
     if (browser_activate(&a->browser, picked, sizeof(picked))) choose_image(a, picked);
 }
+static void select_manual_directory(App *a) {
+    if (a->browse_target != 5 || !a->browser.cwd[0]) {
+        set_status(a, "ENTER A MANUAL FOLDER FIRST");
+        return;
+    }
+    snprintf(a->cfg.manual_dir, sizeof(a->cfg.manual_dir), "%s", a->browser.cwd);
+    a->dirty = true;
+    a->screen = SCREEN_SETTINGS;
+    set_status(a, "MANUAL FOLDER SELECTED");
+}
 static void editor_adjust(App *a, int dx, int dy, int step) {
     if (a->resize_mode) {
-        a->cfg.w += dx * step;
-        a->cfg.h += dy * step;
+        Rect initial = {a->cfg.x, a->cfg.y, a->cfg.w, a->cfg.h};
+        constrain_size(a, initial, dx * step, dy * step);
     } else {
         a->cfg.x += dx * step;
         a->cfg.y += dy * step;
@@ -203,22 +276,56 @@ static void editor_adjust(App *a, int dx, int dy, int step) {
 }
 static void settings_adjust(App *a, int delta) {
     int *p = NULL;
-    if (a->setting_row == 2) p = &a->cfg.card_color;
-    if (a->setting_row == 3) p = &a->cfg.button_color;
+    if (!a->settings_tab) {
+        if (a->setting_row == 2) p = &a->cfg.card_color;
+        if (a->setting_row == 3) p = &a->cfg.button_color;
+    } else {
+        if (a->setting_row == 3) p = &a->cfg.template_style;
+        if (a->setting_row == 4) p = &a->cfg.frame_id;
+        if (a->setting_row == 5) {
+            a->cfg.aspect_lock = !a->cfg.aspect_lock;
+            if (a->cfg.aspect_lock) {
+                a->cfg.aspect_width = a->cfg.w;
+                a->cfg.aspect_height = a->cfg.h;
+            }
+            a->dirty = true; return;
+        }
+        if (a->setting_row == 6) {
+            a->cfg.transparent_button = !a->cfg.transparent_button;
+            a->dirty = true; return;
+        }
+    }
     if (!p) return;
-    *p = (*p + delta + LAD_PALETTE_COUNT) % LAD_PALETTE_COUNT;
+    const int range = a->settings_tab
+                    ? (a->setting_row == 3 ? LAD_STYLE_COUNT : 3) : LAD_PALETTE_COUNT;
+    const int start = a->settings_tab && a->setting_row == 4 ? 1 : 0;
+    *p = ((*p - start + delta + range) % range) + start;
     a->dirty = true;
 }
 static void settings_confirm(App *a) {
-    if (a->setting_row == 0 || a->setting_row == 1)
-        open_browser(a, a->setting_row);
-    else if (a->setting_row == 2 || a->setting_row == 3)
-        settings_adjust(a, 1);
-    else settings_close(a);
+    if (!a->settings_tab) {
+        if (a->setting_row == 0 || a->setting_row == 1)
+            open_browser(a, a->setting_row);
+        else if (a->setting_row == 2 || a->setting_row == 3)
+            settings_adjust(a, 1);
+        else settings_close(a);
+    } else {
+        if (a->setting_row >= 0 && a->setting_row <= 2)
+            open_browser(a, a->setting_row + 2);
+        else if (a->setting_row <= 6) settings_adjust(a, 1);
+        else if (a->setting_row == 8) open_browser(a, 5);
+        else {
+            char message[112];
+            save(a);
+            lad_export_bundle(&a->cfg, message, sizeof(message));
+            set_status(a, message);
+        }
+    }
 }
 static void settings_clear_selected(App *a) {
-    if (a->setting_row == 0 || a->setting_row == 1)
-        clear_image(a, a->setting_row);
+    if ((!a->settings_tab && a->setting_row <= 1) ||
+        (a->settings_tab && a->setting_row <= 2))
+        clear_image(a, a->setting_row + (a->settings_tab ? 2 : 0));
 }
 static void browser_back(App *a) {
     if (!browser_parent(&a->browser)) a->screen = SCREEN_SETTINGS;
@@ -227,7 +334,7 @@ static void navigate(App *a, int dx, int dy, int step) {
     if (a->screen == SCREEN_EDITOR) {
         editor_adjust(a, dx, dy, step);
     } else if (a->screen == SCREEN_SETTINGS) {
-        if (dy) a->setting_row = clampi(a->setting_row + dy, 0, 4);
+        if (dy) a->setting_row = clampi(a->setting_row + dy, 0, a->settings_tab ? 8 : 4);
         else if (dx) settings_adjust(a, dx);
     } else if (dy) {
         a->browser.selected = clampi(a->browser.selected + dy, 0,
@@ -237,6 +344,31 @@ static void navigate(App *a, int dx, int dy, int step) {
 }
 static void pointer_down(App *a, int x, int y) {
     if (a->screen == SCREEN_SETTINGS) {
+        if (hit(x, y, (Rect){580, 56, 350, 45})) {
+            a->settings_tab = !a->settings_tab; a->setting_row = 0; return;
+        }
+        if (a->settings_tab) {
+            if (hit(x, y, (Rect){524, 448, 380, 41})) {
+                a->setting_row = 8; open_browser(a, 5); return;
+            }
+            static const int centers[] = {106, 185, 264};
+            for (int i = 0; i < 3; i++) {
+                if (hit(x, y, (Rect){284, centers[i], 110, 35})) {
+                    a->setting_row = i; open_browser(a, i + 2); return;
+                }
+                if (hit(x, y, (Rect){397, centers[i], 76, 35})) {
+                    a->setting_row = i; clear_image(a, i + 2); return;
+                }
+            }
+            if (hit(x, y, (Rect){46, 320, 430, 34})) a->setting_row = 3;
+            else if (hit(x, y, (Rect){46, 356, 430, 30})) a->setting_row = 4;
+            else if (hit(x, y, (Rect){46, 387, 430, 30})) a->setting_row = 5;
+            else if (hit(x, y, (Rect){46, 416, 430, 29})) a->setting_row = 6;
+            else if (hit(x, y, (Rect){52, 448, 415, 42})) a->setting_row = 7;
+            else return;
+            settings_confirm(a);
+            return;
+        }
         if (hit(x, y, (Rect){284, 106, 110, 35})) {
             a->setting_row = 0; open_browser(a, 0);
         } else if (hit(x, y, (Rect){397, 106, 76, 35})) {
@@ -293,11 +425,10 @@ static void pointer_move(App *a, int x, int y) {
     int dx = x - a->grab_x, dy = y - a->grab_y;
     Rect b = a->start_button;
     if (a->drag_resize) {
-        a->cfg.w = clampi(b.w + dx, MIN_SIZE, CARD_W - b.x);
-        a->cfg.h = clampi(b.h + dy, MIN_SIZE, CARD_H - b.y);
+        constrain_size(a, b, dx, dy);
     } else {
         a->cfg.x = clampi(b.x + dx, 0, CARD_W - b.w);
-        a->cfg.y = clampi(b.y + dy, 0, CARD_H - b.h);
+        a->cfg.y = clampi(b.y + dy, SAFE_TOP, CARD_H - b.h);
     }
     a->dirty = true;
 }
@@ -319,10 +450,19 @@ static void press(App *a, int button) {
         break;
     case SDL_CONTROLLER_BUTTON_X: /* Square */
         if (a->screen == SCREEN_SETTINGS) settings_clear_selected(a);
+        else if (a->screen == SCREEN_BROWSER && a->browse_target == 5)
+            select_manual_directory(a);
         break;
     case SDL_CONTROLLER_BUTTON_Y: /* Triangle */
         if (a->screen == SCREEN_EDITOR) a->resize_mode = !a->resize_mode;
         else if (a->screen == SCREEN_BROWSER) a->screen = SCREEN_SETTINGS;
+        break;
+    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+        if (a->screen == SCREEN_SETTINGS) {
+            a->settings_tab = !a->settings_tab;
+            a->setting_row = 0;
+        }
         break;
     default: break;
     }
@@ -332,6 +472,9 @@ static void key(App *a, SDL_Keycode code) {
         press(a, SDL_CONTROLLER_BUTTON_B);
     } else if (code == SDLK_TAB) {
         if (a->screen == SCREEN_EDITOR) a->resize_mode = !a->resize_mode;
+        else if (a->screen == SCREEN_SETTINGS) {
+            a->settings_tab = !a->settings_tab; a->setting_row = 0;
+        }
     } else if (code == SDLK_F1 || code == SDLK_s) {
         press(a, SDL_CONTROLLER_BUTTON_START);
     } else if (code == SDLK_RETURN || code == SDLK_KP_ENTER) {
@@ -354,6 +497,21 @@ static void draw_card(App *a, Rect card, bool guides) {
     box(r, card, palette[a->cfg.card_color], 255);
     draw_image(r, a->card_texture, card);
     outline(r, card, (SDL_Color){224, 185, 236, 255});
+    if (guides) {
+        int protect_h = SAFE_TOP * card.h / CARD_H;
+        box(r, (Rect){card.x, card.y, card.w, protect_h},
+            (SDL_Color){16, 19, 38, 255}, 197);
+        label(a, card.x + card.w - 285, card.y + 13,
+              "SYSTEM AREA - NO BUTTONS", 1, GOLD, 39);
+        box(r, (Rect){card.x, card.y + protect_h, card.w, 2}, GOLD, 190);
+    }
+    if (a->gate_texture) {
+        Rect gate = {card.x + (card.w - 280 * card.w / CARD_W) / 2,
+                     card.y + (card.h - 158 * card.h / CARD_H) / 2,
+                     280 * card.w / CARD_W, 158 * card.h / CARD_H};
+        draw_image(r, a->gate_texture, gate);
+        if (guides) outline(r, gate, MUTED);
+    }
 
     Rect b = {
         card.x + a->cfg.x * card.w / CARD_W,
@@ -369,7 +527,8 @@ static void draw_card(App *a, Rect card, bool guides) {
         box(r, (Rect){b.x + b.w / 2, b.y + b.h, 2,
                       card.y + card.h - b.y - b.h}, GOLD, 255);
     }
-    box(r, b, palette[a->cfg.button_color], a->button_texture ? 255 : 228);
+    if (!a->cfg.transparent_button)
+        box(r, b, palette[a->cfg.button_color], a->button_texture ? 255 : 228);
     draw_image(r, a->button_texture, b);
     outline(r, b, TEXT);
     if (guides) {
@@ -384,7 +543,7 @@ static void draw_editor(App *a) {
     box(r, (Rect){0, 0, SW, 34}, (SDL_Color){5, 8, 21, 255}, 245);
     char pos[120];
     snprintf(pos, sizeof(pos), "X:%d Y:%d W:%d H:%d R:%d B:%d",
-             a->cfg.x, a->cfg.y, a->cfg.w, a->cfg.h,
+             lad_center_x(&a->cfg), lad_center_y(&a->cfg), a->cfg.w, a->cfg.h,
              CARD_W - a->cfg.x - a->cfg.w,
              CARD_H - a->cfg.y - a->cfg.h);
     label(a, 12, 9, pos, 2, TEXT, 65);
@@ -410,12 +569,70 @@ static const char *file_basename(const char *path) {
     const char *last = strrchr(path, '/');
     return last ? last + 1 : path;
 }
+static void draw_settings_export(App *a) {
+    SDL_Renderer *r = a->renderer;
+    static const char *styles[] = {
+        "A1", "A2", "A3", "A4", "A5", "AD0", "AD1", "AD2", "AD3", "AD4",
+        "BROWSER", "CONTENT_MANAGER", "KIDS", "MUSIC", "NSX1",
+        "PS1EMU", "PSMOBILE", "PSPEMU", "VD"
+    };
+    char line[256];
+    const char *filepaths[] = {
+        a->cfg.gate_image, a->cfg.icon_image, a->cfg.boot_image
+    };
+    const char *titles[] = {"GATE STARTUP IMAGE", "BUBBLE ICON IMAGE", "BOOT SCREEN IMAGE"};
+    static const int item_y[] = {106, 185, 264};
+    label(a, 52, 96, "PNG8 EXPORT - SCE_SYS / LIVEAREA / CONTENTS", 1, MUTED, 0);
+    for (int i = 0; i < 3; ++i) {
+        if (a->setting_row == i) outline(r, (Rect){46, item_y[i] - 3, 428, 69}, GOLD);
+        label(a, 57, item_y[i] + 10, titles[i], 2, TEXT, 0);
+        action_button(a, (Rect){284, item_y[i], 110, 35}, "BROWSE", a->setting_row == i);
+        action_button(a, (Rect){397, item_y[i], 76, 35}, "CLEAR", false);
+        label(a, 57, item_y[i] + 40, file_basename(filepaths[i]), 1, MUTED, 64);
+    }
+    snprintf(line, sizeof(line), "STYLE: %s", styles[a->cfg.template_style]);
+    if (a->setting_row == 3) outline(r, (Rect){46, 319, 428, 33}, GOLD);
+    label(a, 57, 327, line, 2, TEXT, 40);
+    snprintf(line, sizeof(line), "LIVEITEM: FRAME%d", a->cfg.frame_id);
+    if (a->setting_row == 4) outline(r, (Rect){46, 355, 428, 30}, GOLD);
+    label(a, 57, 360, line, 2, TEXT, 40);
+    snprintf(line, sizeof(line), "LOCK ASPECT: %s",
+             a->cfg.aspect_lock ? "ON" : "OFF");
+    if (a->setting_row == 5) outline(r, (Rect){46, 385, 428, 29}, GOLD);
+    label(a, 57, 391, line, 2, TEXT, 40);
+    snprintf(line, sizeof(line), "BUTTON ALPHA: %s",
+             a->cfg.transparent_button ? "ON" : "OFF");
+    if (a->setting_row == 6) outline(r, (Rect){46, 415, 428, 29}, GOLD);
+    label(a, 57, 420, line, 2, TEXT, 40);
+    action_button(a, (Rect){52, 450, 415, 39}, "EXPORT XML + PNG8", a->setting_row == 7);
+
+    label(a, 524, 112, "FRAME IMAGE / CLICKABLE LINK", 2, TEXT, 0);
+    draw_card(a, (Rect){524, 150, 378, 225}, false);
+    snprintf(line, sizeof(line), "CENTER X:%d Y:%d W:%d H:%d",
+             lad_center_x(&a->cfg), lad_center_y(&a->cfg), a->cfg.w, a->cfg.h);
+    label(a, 524, 389, line, 2, GOLD, 33);
+    label(a, 524, 412, "GATE AND FRAMES HAVE FIXED NATIVE SLOTS", 1, MUTED, 0);
+    label(a, 524, 430, "TARGET URI: EDIT SETTINGS.INI ON UX0", 1, MUTED, 0);
+    action_button(a, (Rect){524, 450, 380, 39}, "SELECT MANUAL FOLDER", a->setting_row == 8);
+    if (SDL_TICKS_PASSED(a->message_until, SDL_GetTicks()))
+        label(a, 524, 493, a->message, 1, GOLD, 72);
+}
 static void draw_settings(App *a) {
     SDL_Renderer *r = a->renderer;
     box(r, (Rect){0, 0, SW, SH}, (SDL_Color){9, 13, 29, 255}, 255);
     box(r, (Rect){28, 44, 904, 450}, (SDL_Color){23, 29, 52, 255}, 255);
     outline(r, (Rect){28, 44, 904, 450}, MUTED);
     label(a, 52, 63, "SETTINGS", 3, TEXT, 0);
+    label(a, 584, 70, a->settings_tab ?
+          "L/R: [XML + ASSETS] / COLORS" : "L/R: [COLORS] / XML + ASSETS",
+          2, GOLD, 0);
+    if (a->settings_tab) {
+        draw_settings_export(a);
+        box(r, (Rect){0, 507, SW, 37}, (SDL_Color){5, 7, 19, 255}, 255);
+        label(a, 16, 518, "L/R:TABS  DPAD:NAV  X:SELECT  SQUARE:CLEAR  O:BACK",
+              2, TEXT, 75);
+        return;
+    }
     label(a, 52, 96, "IMAGES PNG / JPG", 1, MUTED, 0);
 
     if (a->setting_row == 0)
@@ -450,9 +667,9 @@ static void draw_settings(App *a) {
     label(a, 520, 106, "LIVE PREVIEW", 2, TEXT, 0);
     draw_card(a, (Rect){524, 143, 378, 216}, false);
     snprintf(desc, sizeof(desc), "X:%d Y:%d W:%d H:%d",
-             a->cfg.x, a->cfg.y, a->cfg.w, a->cfg.h);
+             lad_center_x(&a->cfg), lad_center_y(&a->cfg), a->cfg.w, a->cfg.h);
     label(a, 524, 381, desc, 2, TEXT, 31);
-    label(a, 524, 412, "COLORS FILL TRANSPARENT AREAS", 1, MUTED, 0);
+    label(a, 524, 412, "BUTTON ALPHA IS IN THE XML+ASSETS TAB", 1, MUTED, 0);
     if (SDL_TICKS_PASSED(a->message_until, SDL_GetTicks()))
         label(a, 524, 456, a->message, 1, GOLD, 66);
 
@@ -465,9 +682,11 @@ static void draw_browser(App *a) {
     box(r, (Rect){0, 0, SW, SH}, (SDL_Color){9, 13, 29, 255}, 255);
     box(r, (Rect){24, 44, 912, 448}, (SDL_Color){23, 29, 52, 255}, 255);
     outline(r, (Rect){24, 44, 912, 448}, MUTED);
-    label(a, 41, 61,
-          a->browse_target == 0 ? "SELECT CARD IMAGE" : "SELECT BUTTON IMAGE",
-          3, TEXT, 0);
+    static const char *headings[] = {
+        "SELECT CARD IMAGE", "SELECT BUTTON IMAGE", "SELECT GATE IMAGE",
+        "SELECT ICON0 IMAGE", "SELECT PIC0 IMAGE", "CHOOSE MANUAL DIRECTORY"
+    };
+    label(a, 41, 61, headings[clampi(a->browse_target, 0, 5)], 3, TEXT, 0);
     action_button(a, (Rect){762, 63, 154, 37}, "GO BACK", false);
 
     const char *path = a->browser.cwd[0] ? a->browser.cwd : "CHOOSE STORAGE";
@@ -493,7 +712,9 @@ static void draw_browser(App *a) {
     else if (SDL_TICKS_PASSED(a->message_until, SDL_GetTicks()))
         label(a, 43, 474, a->message, 1, GOLD, 100);
     box(r, (Rect){0, 507, SW, 37}, (SDL_Color){5, 7, 19, 255}, 255);
-    label(a, 24, 518, "DPAD:BROWSE  X:OPEN  O:UP  TRIANGLE:CANCEL",
+    label(a, 24, 518, a->browse_target == 5
+          ? "DPAD:BROWSE  X:OPEN  SQUARE:USE FOLDER  O:UP"
+          : "DPAD:BROWSE  X:OPEN  O:UP  TRIANGLE:CANCEL",
           2, TEXT, 72);
 }
 static void render(App *a) {
@@ -582,6 +803,7 @@ int main(int argc, char **argv) {
     }
     if (a->cfg.card_image[0]) load_texture(a, a->cfg.card_image, &a->card_texture);
     if (a->cfg.button_image[0]) load_texture(a, a->cfg.button_image, &a->button_texture);
+    if (a->cfg.gate_image[0]) load_texture(a, a->cfg.gate_image, &a->gate_texture);
     for (int i = 0; i < SDL_NumJoysticks(); ++i) {
         if (SDL_IsGameController(i)) { a->pad = SDL_GameControllerOpen(i); break; }
     }
@@ -615,6 +837,7 @@ int main(int argc, char **argv) {
     if (a->pad) SDL_GameControllerClose(a->pad);
     SDL_DestroyTexture(a->card_texture);
     SDL_DestroyTexture(a->button_texture);
+    SDL_DestroyTexture(a->gate_texture);
     font_free(&a->font);
     SDL_DestroyRenderer(a->renderer);
     SDL_DestroyWindow(a->window);

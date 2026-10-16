@@ -7,13 +7,30 @@
 #define LAD_PATH_MAX 512
 #define LAD_ITEMS_MAX 256
 #define LAD_PALETTE_COUNT 10
+#define LAD_STYLE_COUNT 19
 
 typedef struct {
     int x, y, w, h;
     int card_color;
     int button_color;
+    int aspect_lock;
+    int aspect_width;
+    int aspect_height;
+    int transparent_button;
+    int template_style;
+    int frame_id;
+    int age_limit;
+    int vita_only;
+    int autoflip;
     char card_image[LAD_PATH_MAX];
     char button_image[LAD_PATH_MAX];
+    char gate_image[LAD_PATH_MAX];
+    char icon_image[LAD_PATH_MAX];
+    char boot_image[LAD_PATH_MAX];
+    char manual_dir[LAD_PATH_MAX];
+    char frame_target[256];
+    char frame_text[160];
+    char frame_lang[16];
 } DesignerConfig;
 
 typedef struct {
