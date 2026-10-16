@@ -294,8 +294,8 @@ bool lad_import_existing_vpk(const char *source, DesignerConfig *cfg,
                     if (attribute(tag, end_tag, "y", attribute_value, sizeof(attribute_value)))
                         relative_y = bounded_int(attribute_value, 0, -500, 500);
                     item->w = width; item->h = height;
-                    item->x = 420 + slot->center_x + relative_x - width / 2;
-                    item->y = 250 - slot->center_y + relative_y - height / 2;
+                    item->x = 420 + slot->center_x + relative_x - (width + 1) / 2;
+                    item->y = 250 - slot->center_y - relative_y - (height + 1) / 2;
                     if (item->x < 0) item->x = 0;
                     if (item->y < 44) item->y = 44;
                     if (item->x + item->w > 840) item->x = 840 - item->w;

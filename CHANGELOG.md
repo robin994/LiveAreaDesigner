@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.25 - 2026-10-16 (coordinate-direction correction)
+
+- Corrected LiveArea Y to use the standard centered Cartesian convention: **Y positive up, negative down**. The web measurements, numeric input, copied offsets, Vita on-screen readings, and exported frame-relative `template.xml` values now agree.
+- Fixed coordinate conversion for imported VPK templates in both the web and native Vita app, including pixel-exact round-trips with odd image dimensions.
+- Preserved the physical pixel coordinates in existing web localStorage and native `settings.ini`: upgrading changes the signed coordinate labels and XML output, not where the images are drawn.
+- Updated the shared RCO geometry code generator and added web/native tests for top/center/bottom positioning and signed XML import/export.
+
 ## v1.24 - 2026-10-16 (experimental pre-release)
 
 - Cleaner web interface: collapsible fallback palette and advanced XML settings; measurements focus on X/Y/W/H, with secondary exports under **More tools**.

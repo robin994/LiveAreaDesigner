@@ -16,8 +16,8 @@ int lad_center_x(const DesignerConfig *config) {
     return config->x + (config->w + 1) / 2 - 420;
 }
 int lad_center_y(const DesignerConfig *config) {
-    /* Card center: Y=0 at 250 px, up negative and down positive. */
-    return config->y + (config->h + 1) / 2 - 250;
+    /* Card center: Y=0 at 250 px, up positive and down negative. */
+    return 250 - config->y - (config->h + 1) / 2;
 }
 
 void lad_resolve_frame(const DesignerConfig *cfg, int frame_id,
@@ -99,7 +99,7 @@ bool lad_write_template(FILE *out, const DesignerConfig *c) {
         int xml_x, xml_y;
         lad_template_frame_offsets(style, frame,
             item.x + (item.w + 1) / 2 - 420,
-            item.y + (item.h + 1) / 2 - 250,
+            250 - item.y - (item.h + 1) / 2,
             &xml_x, &xml_y);
         fprintf(out,
             "  <frame id=\"frame%d\" multi=\"o\" autoflip=\"%d\" rev=\"1\">\n"

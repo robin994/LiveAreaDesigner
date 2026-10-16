@@ -1,7 +1,7 @@
-import { CARD, DEFAULT_LAYOUT, normalizeLayout } from "./geometry.mjs?v=1.24";
-import { makeFrameLayout, frameKey } from "./frame-model.mjs?v=1.24";
-import { RCO_LAYOUTS, getRcoLayout } from "./template-slots.mjs?v=1.24";
-import { readArchiveEntry } from "./vpk.mjs?v=1.24";
+import { CARD, DEFAULT_LAYOUT, normalizeLayout } from "./geometry.mjs?v=1.25";
+import { makeFrameLayout, frameKey } from "./frame-model.mjs?v=1.25";
+import { RCO_LAYOUTS, getRcoLayout } from "./template-slots.mjs?v=1.25";
+import { readArchiveEntry } from "./vpk.mjs?v=1.25";
 
 const CONTENTS = "sce_sys/livearea/contents/";
 const decode = new TextDecoder("utf-8", { fatal: true });
@@ -60,8 +60,8 @@ export function parseVpkTemplate(xml) {
     const x = coordinate(img?.getAttribute("x"), 0);
     const y = coordinate(img?.getAttribute("y"), 0);
     const [centerX, centerY] = native;
-    const cardX = CARD.width / 2 + centerX + x - width / 2;
-    const cardY = CARD.height / 2 - centerY + y - height / 2;
+    const cardX = CARD.width / 2 + centerX + x - Math.ceil(width / 2);
+    const cardY = CARD.height / 2 - centerY - y - Math.ceil(height / 2);
     const item = normalizeLayout({
       ...prepared,
       templateStyle: style, frameId: id,

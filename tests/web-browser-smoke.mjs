@@ -210,7 +210,44 @@ try {
       break;
   }
   await waitFor(() => evaluate('document.querySelector("#measure-x").textContent === "-45"'), "pointer drag");
-  assert.equal(await evaluate('document.querySelector("#measure-y").textContent'), "-24");
+  assert.equal(await evaluate('document.querySelector("#measure-y").textContent'), "24");
+  assert.equal(await evaluate('document.getElementById("input-y").value'), "24");
+  // Editing signed Y must move the image down for negative values, while
+  // leaving persisted top-left geometry in the original pixel coordinate space.
+  await evaluate(`(() => {
+    const input = document.getElementById("input-y");
+    input.value = "-30";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("measure-y").textContent === "-30"'),
+    "negative Y number entry moves image below the center");
+  assert.equal(await evaluate(`JSON.parse(localStorage.getItem("livearea-designer-web-v1")).layout.y`),
+    196);
+  await evaluate(`(() => {
+    const input = document.getElementById("input-y");
+    input.value = "24";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("measure-y").textContent === "24"'),
+    "restoring positive Y moves the image upward");
+  const xmlImportCoordinates = await evaluate(`(async () => {
+    const { parseVpkTemplate } = await import("./vpk-import.mjs");
+    const { frameRelativeOffsets } = await import("./template-preview.mjs");
+    const make = y => parseVpkTemplate(
+      '<livearea style="a3"><frame id="frame2"><liveitem>' +
+      '<image width="111" height="71" x="12" y="' + y + '">frame2.png</image>' +
+      '</liveitem></frame></livearea>'
+    ).frameLayouts["a3:2"];
+    const below = make(-8);
+    const above = make(10);
+    return { belowY: below.y, aboveY: above.y,
+      belowOffset: frameRelativeOffsets(below),
+      aboveOffset: frameRelativeOffsets(above) };
+  })()`);
+  assert.equal(xmlImportCoordinates.belowY, 158);
+  assert.equal(xmlImportCoordinates.aboveY, 140);
+  assert.deepEqual(xmlImportCoordinates.belowOffset, { x: 12, y: -8 });
+  assert.deepEqual(xmlImportCoordinates.aboveOffset, { x: 12, y: 10 });
   console.log("PASS: pointer drag with CSS-scaled canvas coordinates");
 
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -494,7 +531,7 @@ try {
   const movedX = Number(await evaluate('document.getElementById("measure-x").textContent'));
   const movedY = Number(await evaluate('document.getElementById("measure-y").textContent'));
   assert.ok(movedX > initialX, "The selected frame liveitem must be draggable");
-  assert.ok(movedY >= initialY, "The selected frame must remain within its native slot");
+  assert.ok(movedY <= initialY, "Dragging downward must decrease the signed Y coordinate");
   const liveXml = await evaluate(`(async () => {
     const { generateTemplate } = await import("./template.mjs");
     const p = JSON.parse(localStorage.getItem("livearea-designer-web-v1"));

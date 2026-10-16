@@ -1,4 +1,4 @@
-import { frameCount } from "./template-slots.mjs?v=1.24";
+import { frameCount } from "./template-slots.mjs?v=1.25";
 
 export const SCREEN = Object.freeze({ width: 960, height: 544 });
 export const CARD = Object.freeze({ x: 60, y: 44, width: 840, height: 500 });
@@ -103,12 +103,21 @@ export function buttonOnScreen(layout) {
   };
 }
 
-// Card center is (0,0); negative coordinates are left/up, positive right/down.
-// These are design coordinates. Frame image coordinates are frame-relative on Vita.
+// Center-origin coordinates: X increases right, Y increases UP (as in
+// the Vita RCO layout hints). Stored x/y remain top-left screen pixels,
+// so layouts saved by earlier releases retain their visual positions.
 export function centeredOffsets(layout) {
   return {
-    x: Math.round(layout.x + layout.w / 2 - CARD.width / 2),
-    y: Math.round(layout.y + layout.h / 2 - CARD.height / 2)
+    x: layout.x + Math.ceil(layout.w / 2) - CARD.width / 2,
+    y: CARD.height / 2 - layout.y - Math.ceil(layout.h / 2)
+  };
+}
+
+/** Exact integer inverse, including odd image widths/heights. */
+export function cardPositionFromCenteredOffsets(layout, x, y) {
+  return {
+    x: Math.round(x) + CARD.width / 2 - Math.ceil(layout.w / 2),
+    y: CARD.height / 2 - Math.ceil(layout.h / 2) - Math.round(y)
   };
 }
 

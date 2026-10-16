@@ -1,19 +1,20 @@
 import {
   SCREEN, CARD, RESERVED_TOP, PALETTE, DEFAULT_LAYOUT, centeredOffsets,
+  cardPositionFromCenteredOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
-} from "./geometry.mjs?v=1.24";
-import { generateTemplate } from "./template.mjs?v=1.24";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.24";
+} from "./geometry.mjs?v=1.25";
+import { generateTemplate } from "./template.mjs?v=1.25";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.25";
 import {
   previewGate, previewFrames, previewSummary, frameRelativeOffsets,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
-} from "./template-preview.mjs?v=1.24";
+} from "./template-preview.mjs?v=1.25";
 import {
   frameKey, frameLayoutFor, allFrameLayouts, clampLiveitemToFrame
-} from "./frame-model.mjs?v=1.24";
-import { readVpk, patchVpk } from "./vpk.mjs?v=1.24";
-import { readVpkProject } from "./vpk-import.mjs?v=1.24";
+} from "./frame-model.mjs?v=1.25";
+import { readVpk, patchVpk } from "./vpk.mjs?v=1.25";
+import { readVpkProject } from "./vpk-import.mjs?v=1.25";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";
@@ -388,8 +389,8 @@ function updateInterface() {
   }
   fields.x.min = String(Math.round(layout.w / 2 - CARD.width / 2));
   fields.x.max = String(Math.round(CARD.width / 2 - layout.w / 2));
-  fields.y.min = String(Math.round(RESERVED_TOP + layout.h / 2 - CARD.height / 2));
-  fields.y.max = String(Math.round(CARD.height / 2 - layout.h / 2));
+  fields.y.min = String(centeredOffsets({ ...layout, y: CARD.height - layout.h }).y);
+  fields.y.max = String(centeredOffsets({ ...layout, y: RESERVED_TOP }).y);
   fields.w.max = String(CARD.width - layout.x);
   fields.h.max = String(CARD.height - layout.y);
   document.getElementById("lock-aspect").checked = layout.lockAspect;
@@ -1127,9 +1128,10 @@ function bindEditor() {
     const commitGeometry = next =>
       setLayout(state.templatePreview ? clampLiveitemToFrame(next) : next);
     if (key === "x" || key === "y") {
-      const position = key === "x"
-        ? Math.round(number + CARD.width / 2 - state.layout.w / 2)
-        : Math.round(number + CARD.height / 2 - state.layout.h / 2);
+      const current = centeredOffsets(state.layout);
+      const position = cardPositionFromCenteredOffsets(state.layout,
+        key === "x" ? number : current.x,
+        key === "y" ? number : current.y)[key];
       commitGeometry({ ...state.layout, [key]: position });
     } else if (state.layout.lockAspect) {
       commitGeometry(dragLayout(state.layout, key === "w" ? number - state.layout.w : 0,

@@ -1,5 +1,5 @@
-import { CARD, centeredOffsets, buttonOnScreen, normalizeLayout, MIN_BUTTON_SIZE } from "./geometry.mjs?v=1.24";
-import { getRcoLayout } from "./template-slots.mjs?v=1.24";
+import { CARD, centeredOffsets, buttonOnScreen, normalizeLayout, MIN_BUTTON_SIZE } from "./geometry.mjs?v=1.25";
+import { getRcoLayout } from "./template-slots.mjs?v=1.25";
 
 export const GATE_WIDTH = 280;
 export const GATE_HEIGHT = 158;
@@ -48,7 +48,7 @@ export function frameRelativeOffsets(layout) {
   const centered = centeredOffsets(layout);
   return {
     x: centered.x - (frame?.rcoX ?? 0),
-    y: centered.y + (frame?.rcoY ?? 0)
+    y: centered.y - (frame?.rcoY ?? 0)
   };
 }
 

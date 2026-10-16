@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   SCREEN, CARD, RESERVED_TOP, PALETTE, DEFAULT_LAYOUT, normalizeLayout,
-  offsets, centeredOffsets, buttonOnScreen, toCanvasPoint, hitTest, dragLayout, stepLayout
+  offsets, centeredOffsets, cardPositionFromCenteredOffsets, buttonOnScreen,
+  toCanvasPoint, hitTest, dragLayout, stepLayout
 } from "../docs/geometry.mjs";
 import { generateTemplate } from "../docs/template.mjs";
 import { makeZip } from "../docs/package.mjs";
@@ -22,7 +23,27 @@ test("native PS Vita card and image sizes match the archived LiveArea guide", ()
   assert.equal(RESERVED_TOP, 44);
   assert.equal(PALETTE.length, 10);
   assert.deepEqual(offsets(DEFAULT_LAYOUT), { left: 276, top: 112, right: 278, bottom: 220 });
-  assert.deepEqual(centeredOffsets(DEFAULT_LAYOUT), { x: -1, y: -54 });
+  assert.deepEqual(centeredOffsets(DEFAULT_LAYOUT), { x: -1, y: 54 });
+});
+
+test("center coordinates use +Y upward and -Y downward without moving saved pixels", () => {
+  const above = normalizeLayout({ ...DEFAULT_LAYOUT, y: 146 }); // center 230
+  const center = normalizeLayout({ ...DEFAULT_LAYOUT, y: 166 }); // center 250
+  const below = normalizeLayout({ ...DEFAULT_LAYOUT, y: 186 }); // center 270
+  assert.deepEqual([centeredOffsets(above).y, centeredOffsets(center).y,
+    centeredOffsets(below).y], [20, 0, -20]);
+  const movedDown = dragLayout(center, 0, 25, "move");
+  assert.equal(centeredOffsets(movedDown).y, -25);
+  const movedUp = dragLayout(center, 0, -25, "move");
+  assert.equal(centeredOffsets(movedUp).y, 25);
+  for (const h of [24, 75, 168, 167, 455]) {
+    const saved = normalizeLayout({ ...DEFAULT_LAYOUT, x: 140, y: 185, w: 101, h });
+    const signed = centeredOffsets(saved);
+    assert.deepEqual(cardPositionFromCenteredOffsets(saved, signed.x, signed.y),
+      { x: saved.x, y: saved.y });
+    assert.equal(centeredOffsets(normalizeLayout(saved)).y, signed.y,
+      "Older localStorage layouts keep their screen-space position");
+  }
 });
 
 test("movement respects the system-reserved strip and card bounds", () => {
@@ -89,7 +110,7 @@ test("template XML uses frame-relative offsets and escapes content", () => {
   assert.match(xml, /<image>bg0.png<\/image>/);
   assert.match(xml, /<startup-image>startup.png<\/startup-image>/);
   assert.match(xml, /<frame id="frame3" multi="o" autoflip="0" rev="1">/);
-  assert.match(xml, /origin="frame" width="286" height="168" x="-1" y="-225"/);
+  assert.match(xml, /origin="frame" width="286" height="168" x="-1" y="225"/);
   assert.match(xml, /https:\/\/example.org\?a=1&amp;b=&lt;x&gt;/);
   assert.match(xml, /<str size="22" color="#ffffff" bold="on">A &lt;B&gt; &amp; &quot;C&quot;<\/str>/);
   assert.match(xml, /<model>vita<\/model>/);
@@ -150,10 +171,10 @@ test("RCO frame geometry varies across a1-a5, with the correct fixed slot count"
 
 test("frame-relative XML transforms, style-specific frame bounds, and Fit frame", () => {
   const a1 = { ...DEFAULT_LAYOUT, templateStyle: "a1", frameId: 3 };
-  assert.deepEqual(frameRelativeOffsets(a1), { x: -1, y: -225 });
-  assert.deepEqual(frameRelativeOffsets({ ...a1, frameId: 1 }), { x: 289, y: -20 });
+  assert.deepEqual(frameRelativeOffsets(a1), { x: -1, y: 225 });
+  assert.deepEqual(frameRelativeOffsets({ ...a1, frameId: 1 }), { x: 289, y: 20 });
   const a4 = { ...a1, templateStyle: "a4", frameId: 5 };
-  assert.deepEqual(frameRelativeOffsets(a4), { x: -1, y: -265 });
+  assert.deepEqual(frameRelativeOffsets(a4), { x: -1, y: 265 });
   assert.equal(imageFitsSelectedFrame(a4), false);
   const resized = fitImageToSelectedFrame(a4);
   assert.equal(resized.frameId, 5);

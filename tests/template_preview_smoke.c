@@ -36,10 +36,10 @@ int main(void) {
     assert(!lad_template_frame(4, 8));
     assert(lad_template_frame_count(5) == 1);
     int x = 0, y = 0;
-    lad_template_frame_offsets(0, 3, -1, -54, &x, &y);
-    assert(x == -1 && y == -225);
-    lad_template_frame_offsets(16, 2, -1, -54, &x, &y);
-    assert(x == 162 && y == -109);
+    lad_template_frame_offsets(0, 3, -1, 54, &x, &y);
+    assert(x == -1 && y == 225);
+    lad_template_frame_offsets(16, 2, -1, 54, &x, &y);
+    assert(x == 162 && y == 109);
 
     LadPreviewGate schematic = lad_preview_gate(2);
     assert(schematic.known_alignment == 1);

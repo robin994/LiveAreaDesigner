@@ -15,11 +15,18 @@ int main(void) {
     cfg.age_limit = 3;
 
     assert(lad_center_x(&cfg) == -1);
-    assert(lad_center_y(&cfg) == -54);
+    assert(lad_center_y(&cfg) == 54);
     cfg.w = 285;
     cfg.h = 167;
     assert(lad_center_x(&cfg) == -1); /* Browser rounds .5 upward. */
-    assert(lad_center_y(&cfg) == -54);
+    assert(lad_center_y(&cfg) == 54);
+    cfg.y = 166; cfg.h = 168;
+    assert(lad_center_y(&cfg) == 0);
+    cfg.y = 186;
+    assert(lad_center_y(&cfg) == -20);
+    cfg.y = 146;
+    assert(lad_center_y(&cfg) == 20);
+    cfg.y = 112;
     cfg.w = 286;
     cfg.h = 168;
     FILE *file = tmpfile();
@@ -33,7 +40,7 @@ int main(void) {
     assert(strstr(xml, "<livearea style=\"a1\" format-ver=\"01.00\"") != NULL);
     assert(strstr(xml, "<image>bg0.png</image>") != NULL);
     assert(strstr(xml, "<startup-image>startup.png</startup-image>") != NULL);
-    assert(strstr(xml, "width=\"286\" height=\"168\" x=\"-1\" y=\"-225\"") != NULL);
+    assert(strstr(xml, "width=\"286\" height=\"168\" x=\"-1\" y=\"225\"") != NULL);
     assert(strstr(xml, "frame1.png") != NULL);
     assert(strstr(xml, "frame2.png") != NULL);
     assert(strstr(xml, "frame3.png") != NULL);
@@ -54,7 +61,7 @@ int main(void) {
     fclose(file);
     assert(strstr(xml, "style=\"psmobile\"") != NULL);
     assert(strstr(xml, "id=\"frame2\"") != NULL);
-    assert(strstr(xml, "width=\"286\" height=\"168\" x=\"162\" y=\"-109\"") != NULL);
+    assert(strstr(xml, "width=\"286\" height=\"168\" x=\"162\" y=\"109\"") != NULL);
     assert(strstr(xml, "frame4.png") != NULL);
 
     /* Verify an independent liveitem for a different native slot. */

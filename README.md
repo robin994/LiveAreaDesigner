@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — v1.24, VPK editing, optimized PNG8 and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — v1.25, corrected Y coordinates, VPK editing, optimized PNG8 and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -46,6 +46,8 @@ PNG8 conversion itself remains a **lossy quantization** of RGB colors with binar
 **Template preview:** click **Preview Template** above the canvas (or press **P**) to switch between the freeform editor and the RCO-based layout. Changing `Layout Style` changes the native frame layout and count (e.g. `a1` has 3 slots, `a3` has 5 and `a5` has 7). Click a frame to edit **that frame's own liveitem**: upload PNG/JPG using **FrameN image**, adjust size and position using the editor or Geometry inputs, change frame background, text and target in the inspector. The preview renders the selected image in the appropriate slot; other configured frames remain visible at the same time. The selected native frame has a gold outline, and editing handles act only on its liveitem. **Fit image to selected frame** centers/scales it into the slot. **Export PNG Preview** captures the active mode; settings and images survive refresh.
 
 The preview reads slot position/size metadata exported from `vs0:/vsh/shell/livearea/*.rco` on a PS Vita (19 native styles). Frame center coordinates are card-relative in the editor; XML generation subtracts **each frame's own RCO center**, so exported `x` and `y` are frame-relative. Switching styles or frame selection does not discard the other frames' settings. Some system-specific frames expose dynamic dimensions; those show a `DYNAMIC` marker, and automatic fitting is unavailable.
+
+**Coordinate directions:** the origin (0, 0) is at the card center. X increases right and decreases left; **Y increases upward and decreases downward**, matching the native RCO coordinate convention. Dragging a liveitem down reduces its displayed and exported Y. Internally, saved layout `x`/`y` still represent top-left pixels, so projects created with earlier versions retain their visual placement without migration. Imported VPK `template.xml` coordinates are interpreted with the same convention.
 
 The web app can download a standalone `template.xml` and **Export LiveArea Assets (.zip)**, which contains:
 
@@ -150,7 +152,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (v1.24). RCO geometry is verified against the user's own Vita firmware, but the new VPK editing workflow and generated XML/PNG8 assets still require end-to-end hardware testing.
+Output: `build/LIVAREA01.vpk` (v1.25). RCO geometry is verified against the user's own Vita firmware, but the VPK editing workflow and newly exported XML/PNG8 assets still require end-to-end hardware testing.
 
 Tests:
 

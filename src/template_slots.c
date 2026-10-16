@@ -196,7 +196,7 @@ void lad_template_frame_offsets(int style_index, int frame_id,
                                 int card_center_x, int card_center_y,
                                 int *offset_x, int *offset_y) {
     const LadTemplateSlot *frame = lad_template_frame(style_index, frame_id);
-    /* XML x/y are relative to the frame center, not the card center. */
+    /* XML x/y are frame-relative, with +Y pointing up (RCO convention). */
     *offset_x = card_center_x - (frame ? frame->center_x : 0);
-    *offset_y = card_center_y + (frame ? frame->center_y : 0);
+    *offset_y = card_center_y - (frame ? frame->center_y : 0);
 }
