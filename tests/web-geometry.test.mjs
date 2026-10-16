@@ -6,6 +6,7 @@ import {
 } from "../docs/geometry.mjs";
 import { generateTemplate } from "../docs/template.mjs";
 import { makeZip } from "../docs/package.mjs";
+import { previewGate, previewSummary } from "../docs/template-preview.mjs";
 
 test("native PS Vita card and image sizes match the archived LiveArea guide", () => {
   assert.deepEqual(SCREEN, { width: 960, height: 544 });
@@ -94,4 +95,19 @@ test("ZIP builder produces correct local and central directory signatures", asyn
   assert.deepEqual(Array.from(bytes.slice(-22,-18)), [0x50,0x4b,5,6]);
   assert.ok(bytes.length > 100);
   assert.throws(() => makeZip([{name:"../unsafe.xml",data:"a"}]), /Unsafe ZIP/);
+});
+
+test("template preview shows documented gate alignment without claiming exact slot coordinates", () => {
+  const center = previewGate({ ...DEFAULT_LAYOUT, templateStyle: "a1" });
+  assert.deepEqual(center, {
+    x: 340, y: 215, w: 280, h: 158, alignment: "center", estimated: true
+  });
+  const right = previewGate({ ...DEFAULT_LAYOUT, templateStyle: "psmobile" });
+  assert.deepEqual(right, {
+    x: 596, y: 215, w: 280, h: 158, alignment: "right", estimated: true
+  });
+  const unknown = previewSummary({ ...DEFAULT_LAYOUT, templateStyle: "a3", frameId: 2 });
+  assert.equal(unknown.frame, "frame2");
+  assert.equal(unknown.gateDescription, "gate location unverified");
+  assert.match(unknown.note, /Illustrative LiveArea preview/);
 });

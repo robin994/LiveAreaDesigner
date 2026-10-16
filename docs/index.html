@@ -23,11 +23,11 @@
       <span class="brand-name">LIVEAREA <strong>DESIGNER</strong><small>PS VITA DESIGN TOOL</small></span>
     </a>
     <div class="header-right">
-      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.20</span>
+      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.21</span>
       <a class="header-link" href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">
         GitHub <span aria-hidden="true">↗</span>
       </a>
-      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.20" target="_blank" rel="noopener noreferrer">
+      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.21" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 17v3h16v-3"/></svg>
         Download VPK
       </a>
@@ -75,6 +75,11 @@
               <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.7" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h18M7 3v18M12 3v18M17 3v18"/></svg>
               Guides
             </button>
+            <button id="toggle-template-preview" type="button" class="template-preview-toggle" aria-pressed="false"
+              title="Display the LiveArea template with its gate, active frame and system buttons">
+              <span class="template-toggle-icon" aria-hidden="true">▣</span> Preview Template
+              <span class="template-toggle-state" id="template-preview-state">OFF</span>
+            </button>
           </div>
           <div class="canvas-wrap">
             <canvas id="preview" width="960" height="544" tabindex="0" aria-label="PlayStation Vita preview at 960 by 544 pixels. Drag the button to move it; drag the yellow bottom-right handle to resize it.">
@@ -88,6 +93,11 @@
           <div class="preview-bottom">
             <div class="help-copy"><span class="pointer-symbol" aria-hidden="true">↗</span> Drag the button or its yellow resize handle. The top 44px system area is protected.</div>
             <span class="keyboard-tip">ARROWS <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> <small>SHIFT × 10</small></span>
+          </div>
+          <div id="template-preview-details" class="template-preview-details" hidden>
+            <span class="template-preview-badge">ILLUSTRATIVE</span>
+            <span id="template-preview-summary" aria-live="polite">Style a1 · frame3 · centered gate</span>
+            <p>The fixed gate and frame slots are defined by the Vita system. Their exact positions may differ; move and resize the liveitem in the preview to edit the exported template.xml.</p>
           </div>
         </div>
 

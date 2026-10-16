@@ -163,16 +163,42 @@ h1 em { font-style: normal; color: #f09edb; }
 }
 .tiny-square { width: 7px; height: 7px; background: #e99ade; border-radius: 2px; }
 .mode-control { display: flex; align-items: center; gap: 3px; padding: 3px; background: #0b1221; border: 1px solid #29374f; border-radius: 8px; margin-left: auto; }
-.mode-button, .guides-button {
+.mode-button, .guides-button, .template-preview-toggle {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   border: 0; color: #9ba9c0; background: transparent; padding: 8px 11px;
   font: 600 11px "Space Grotesk", sans-serif; border-radius: 5px;
 }
 .mode-button svg, .guides-button svg { width: 14px; height: 14px; }
-.mode-button:hover, .guides-button:hover { color: #eef2fc; }
+.mode-button:hover, .guides-button:hover, .template-preview-toggle:hover { color: #eef2fc; }
 .mode-button.is-active { background: #293b56; color: #f2f6ff; box-shadow: 0 1px 4px #0005; }
 .guides-button { border: 1px solid #29374f; padding: 10px 12px; }
 .guides-button.is-active { border-color: #676788; color: #ded8f3; background: #202740; }
+.template-preview-toggle {
+  padding: 9px 10px; border: 1px solid #435774;
+  background: #15243c; color: #b7c7e0; white-space: nowrap;
+}
+.template-preview-toggle[aria-pressed="true"] {
+  background: #473052; border-color: #e9a1dd; color: #ffe9fc;
+}
+.template-toggle-icon { font-size: 16px; line-height: 1; }
+.template-toggle-state {
+  display: inline-grid; place-items: center; min-width: 24px;
+  border-radius: 3px; padding: 2px 4px; background: #0d1424;
+  font: 700 9px/1.5 "Space Grotesk", sans-serif; letter-spacing: .5px;
+}
+.template-preview-toggle[aria-pressed="true"] .template-toggle-state { background: #7d467a; }
+.template-preview-details {
+  padding: 11px 16px 13px; border-top: 1px solid #394961;
+  background: #20273b; color: #c2d3e8;
+  font: 500 11px/1.55 "Space Grotesk", sans-serif;
+}
+.template-preview-details[hidden] { display: none; }
+.template-preview-details > span { vertical-align: middle; }
+.template-preview-details p { color: #aebdd2; font-size: 10px; margin: 6px 0 0; }
+.template-preview-badge {
+  color: #ffe4ac; font: 700 9px "Space Grotesk", sans-serif;
+  border: 1px solid #b5945f; padding: 3px 6px; border-radius: 3px; margin-right: 8px;
+}
 
 .canvas-wrap { position: relative; padding: 17px; background: #091221; }
 .canvas-wrap::after {
@@ -402,6 +428,8 @@ kbd {
   .screen-name { width: 100%; }
   .mode-control { margin-left: 0; }
   .guides-button { margin-left: auto; }
+  .template-preview-toggle { flex: 1 1 100%; min-height: 37px; }
+  .template-preview-details { padding: 10px; }
   .canvas-wrap { padding: 8px; }
   .canvas-wrap::after { inset: 8px; }
   .screen-corner { display: none; }

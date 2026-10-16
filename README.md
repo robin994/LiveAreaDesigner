@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — v1.20 experimental preview.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — v1.21 experimental preview.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -17,6 +17,7 @@ LiveArea Designer helps homebrew authors prototype the images and layout of a PS
 - Choose one LiveArea style and frame, with optional target URI, text, language restriction, age limit, Vita-only model and autoflip (see notes below).
 - Save **template.xml** and an accompanying export of **8-bit indexed PNG assets** (up to 225 palette entries including a transparent slot).
 - Add optional **manual pages**, packaged in numerical order starting at `sce_sys/manual/001.png`.
+- **Preview Template** mode displays the chosen LiveArea style, reserved system buttons, the fixed startup gate, the selected frame liveitem and its optional link/text. Continue moving or resizing the liveitem while previewing; the XML updates from the same layout values.
 
 The preview is a design aid, **not** a pixel-perfect emulation of the system's fixed gate and frame slots. In particular, moving the custom image in the editor does not move the actual startup gate; exported frame-image coordinates are relative to the chosen Vita frame, not the entire card. Test and adjust the XML on an actual PS Vita.
 
@@ -25,6 +26,10 @@ The preview is a design aid, **not** a pixel-perfect emulation of the system's f
 **https://robin994.github.io/LiveAreaDesigner/**
 
 Everything runs in your browser; images never leave your computer. Choose PNG/JPG assets through the normal file picker or drag-and-drop. Layout settings use localStorage, images use IndexedDB. Supported on modern desktop and mobile browsers; the Vita's built-in browser is not a target.
+
+**Template preview:** click **Preview Template** above the canvas (or press **P**) to switch between the freeform editor and a visual approximation of the exported `template.xml`. The selected style, frame, text, images and target update immediately from Settings. Drag the liveitem or its yellow resize handle in either mode, or use the numeric geometry controls; the preview flag and layout values are restored on refresh. **Export PNG Preview** captures the active mode.
+
+The preview illustrates the structure of the template. `a1` uses a centered startup gate and `psmobile` right alignment; exact gate offsets and fixed frame slots are not known for every style. Unknown positions are explicitly labeled illustrative, not presented as Sony-certified coordinates.
 
 The web app can download a standalone `template.xml` and **Export LiveArea Assets (.zip)**, which contains:
 
@@ -62,15 +67,19 @@ Install the `LIVAREA01.vpk` from [Releases](https://github.com/robin994/LiveArea
 | Triangle | Toggle Move / Resize |
 | D-pad | Move or resize by 1 pixel |
 | Hold R + D-pad | Change by 10 pixels |
+| SELECT in the editor | Toggle **Preview Template** |
+| Square while template preview is active | Cycle LiveArea style |
+| L while template preview is active | Cycle frame1–frame3 |
 | Start | Open/close Settings |
 | L / R in Settings | Switch between Colors and XML + Assets tabs |
+| XML + Assets > Preview | Toggle template preview, including the Settings mini-preview |
 | D-pad + Cross | Navigate / select options / browse |
 | Square on image row | Clear image |
 | Cross on XML + Assets > Export | Save XML and PNG8 assets |
 | XML + Assets > Select Manual Folder | Browse to a directory; press **Square** to use it |
 | Circle | Back / save / exit |
 
-In the XML + Assets tab, select gate, icon0 and pic0 images, LiveArea style, frame, aspect-lock and transparency options. Frame link, text, language, age, Vita-only and autoflip are loaded/saved in the editable `settings.ini` keys:
+In the XML + Assets tab, select gate, icon0 and pic0 images, LiveArea style, frame, aspect-lock and transparency options. The persisted preview flag is `preview_template=1` when active. Frame link, text, language, age, Vita-only and autoflip are loaded/saved in the editable `settings.ini` keys:
 
 ```ini
 frame_target=https://example.com
@@ -79,6 +88,7 @@ frame_lang=
 age_limit=0
 vita_only=0
 autoflip=0
+preview_template=1
 ```
 
 **Native export destination:**
@@ -106,7 +116,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (v1.20). Hardware validation of frame positioning and the newly added native PNG8 encoder is still required.
+Output: `build/LIVAREA01.vpk` (v1.21). Hardware validation of template-preview fidelity, frame positioning and the native PNG8 encoder is still required.
 
 Tests:
 
@@ -118,6 +128,8 @@ clang -std=c99 -Wall -Wextra -Werror -Isrc src/exporter_xml.c tests/exporter_xml
 build/host-test/exporter_xml_smoke
 clang -std=c99 -Wall -Wextra -Werror -Itests/mocks -Isrc src/assets.c tests/assets_smoke.c -o build/host-test/assets_smoke
 build/host-test/assets_smoke
+clang -std=c99 -Wall -Wextra -Werror -Isrc src/template_preview.c tests/template_preview_smoke.c -o build/host-test/template_preview_smoke
+build/host-test/template_preview_smoke
 ```
 
 ## Reference material

@@ -5,6 +5,7 @@ import {
 } from "./geometry.mjs";
 import { generateTemplate } from "./template.mjs";
 import { buildLiveAreaPackage } from "./package.mjs";
+import { previewGate, previewSummary } from "./template-preview.mjs";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";
@@ -18,6 +19,10 @@ const elements = {
   move: document.getElementById("mode-move"),
   resize: document.getElementById("mode-resize"),
   guides: document.getElementById("toggle-guides"),
+  templatePreview: document.getElementById("toggle-template-preview"),
+  templatePreviewState: document.getElementById("template-preview-state"),
+  templateDetails: document.getElementById("template-preview-details"),
+  templateSummary: document.getElementById("template-preview-summary"),
   export: document.getElementById("export-preview"),
   copy: document.getElementById("copy-coordinates"),
   reset: document.getElementById("reset-geometry"),
@@ -35,6 +40,7 @@ const state = {
   layout: normalizeLayout(stored?.layout ?? DEFAULT_LAYOUT),
   mode: stored?.mode === "resize" ? "resize" : "move",
   guides: stored?.guides !== false,
+  templatePreview: stored?.templatePreview === true,
   images: { card: null, button: null, gate: null, icon: null, boot: null, manual: [] },
   drag: null
 };
@@ -58,7 +64,8 @@ function status(message, ok = true) {
 function savePreferences() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
-      layout: state.layout, mode: state.mode, guides: state.guides
+      layout: state.layout, mode: state.mode, guides: state.guides,
+      templatePreview: state.templatePreview
     }));
     status("Saved in this browser");
   } catch {
@@ -354,6 +361,14 @@ function updateInterface() {
   elements.resize.setAttribute("aria-pressed", String(state.mode === "resize"));
   elements.guides.classList.toggle("is-active", state.guides);
   elements.guides.setAttribute("aria-pressed", String(state.guides));
+  elements.templatePreview.setAttribute("aria-pressed", String(state.templatePreview));
+  elements.templatePreviewState.textContent = state.templatePreview ? "ON" : "OFF";
+  elements.templateDetails.hidden = !state.templatePreview;
+  if (state.templatePreview) {
+    const summary = previewSummary(layout);
+    elements.templateSummary.textContent =
+      `Style ${summary.style} · ${summary.frame} · ${summary.gateDescription}`;
+  }
 }
 
 function scheduleDraw() {
@@ -374,6 +389,12 @@ function setLayout(next, persist = true) {
 
 function setMode(mode) {
   state.mode = mode;
+  savePreferences();
+  scheduleDraw();
+}
+
+function setTemplatePreview(enabled) {
+  state.templatePreview = enabled;
   savePreferences();
   scheduleDraw();
 }
@@ -458,6 +479,118 @@ function drawBackdrop(ctx2d) {
   }
 }
 
+function drawTemplateElements(ctx2d, layout) {
+  const gate = previewGate(layout);
+  const frame = buttonOnScreen(layout);
+  ctx2d.save();
+
+  // The Vita reserves these slots. Their alignment is documented, but their
+  // exact pixel offsets are not; this is an interactive structural preview.
+  ctx2d.fillStyle = "#141e36ec";
+  ctx2d.fillRect(CARD.x + 1, CARD.y + 1, CARD.width - 2, RESERVED_TOP - 1);
+  ctx2d.font = '600 14px "Space Grotesk", sans-serif';
+  ctx2d.textAlign = "left";
+  ctx2d.textBaseline = "middle";
+  ctx2d.fillStyle = "#e9e5fa";
+  ctx2d.fillText("LIVEAREA", CARD.x + 17, CARD.y + RESERVED_TOP / 2);
+  const buttons = [
+    { name: "UPDATE", w: 91 },
+    { name: "MANUAL", w: 94 }
+  ];
+  let right = CARD.x + CARD.width - 12;
+  for (const button of buttons) {
+    const x = right - button.w;
+    roundedBox(ctx2d, x, CARD.y + 8, button.w, 27, 6);
+    ctx2d.fillStyle = "#334663";
+    ctx2d.fill();
+    ctx2d.strokeStyle = "#778bb0";
+    ctx2d.stroke();
+    ctx2d.fillStyle = "#f4f2ff";
+    ctx2d.textAlign = "center";
+    ctx2d.font = '600 11px "Space Grotesk", sans-serif';
+    ctx2d.fillText(button.name, x + button.w / 2, CARD.y + 21);
+    right = x - 9;
+  }
+
+  ctx2d.fillStyle = "#12213ab5";
+  roundedBox(ctx2d, gate.x - 5, gate.y - 5, gate.w + 10, gate.h + 38, 13);
+  ctx2d.fill();
+  ctx2d.strokeStyle = "#bfd0e28f";
+  ctx2d.lineWidth = 1.5;
+  ctx2d.stroke();
+  if (state.images.gate?.image) {
+    ctx2d.drawImage(state.images.gate.image, gate.x, gate.y, gate.w, gate.h);
+  } else {
+    const grad = ctx2d.createLinearGradient(gate.x, gate.y, gate.x, gate.y + gate.h);
+    grad.addColorStop(0, "#585d87");
+    grad.addColorStop(1, "#2b314f");
+    ctx2d.fillStyle = grad;
+    roundedBox(ctx2d, gate.x, gate.y, gate.w, gate.h, 8);
+    ctx2d.fill();
+    ctx2d.fillStyle = "#eeebff";
+    ctx2d.font = '700 18px "Space Grotesk", sans-serif';
+    ctx2d.textAlign = "center";
+    ctx2d.fillText("STARTUP IMAGE", gate.x + gate.w / 2, gate.y + gate.h / 2);
+  }
+  roundedBox(ctx2d, gate.x + 54, gate.y + gate.h + 3, gate.w - 108, 24, 12);
+  ctx2d.fillStyle = "#48a5ea";
+  ctx2d.fill();
+  ctx2d.fillStyle = "#fff";
+  ctx2d.textAlign = "center";
+  ctx2d.font = '700 12px "Space Grotesk", sans-serif';
+  ctx2d.fillText("START", gate.x + gate.w / 2, gate.y + gate.h + 15);
+
+  // The selected liveitem remains the draggable element in either mode.
+  // Highlight overlapping content so it is clear why a system slot matters.
+  const overlaps = frame.x < gate.x + gate.w && frame.x + frame.w > gate.x &&
+    frame.y < gate.y + gate.h && frame.y + frame.h > gate.y;
+  ctx2d.fillStyle = "#091326c7";
+  roundedBox(ctx2d, CARD.x + 15, CARD.y + RESERVED_TOP + 11, 230, 24, 4);
+  ctx2d.fill();
+  ctx2d.font = '600 12px "Space Grotesk", sans-serif';
+  ctx2d.textAlign = "left";
+  ctx2d.fillStyle = "#d7f0ff";
+  ctx2d.fillText(`STYLE: ${layout.templateStyle.toUpperCase()}  |  FRAME ${layout.frameId}`,
+    CARD.x + 26, CARD.y + RESERVED_TOP + 23);
+  if (overlaps) {
+    ctx2d.fillStyle = "#ffe49f";
+    ctx2d.font = '600 12px "Space Grotesk", sans-serif';
+    ctx2d.fillText("GATE OVERLAP", CARD.x + 26, CARD.y + RESERVED_TOP + 45);
+  }
+  ctx2d.restore();
+}
+
+function drawLiveitemLabels(ctx2d, layout, rect) {
+  ctx2d.save();
+  ctx2d.textBaseline = "middle";
+  ctx2d.font = '700 12px "Space Grotesk", sans-serif';
+  const title = `FRAME${layout.frameId} / EDITABLE LIVEITEM`;
+  const width = ctx2d.measureText(title).width + 18;
+  const labelY = Math.max(CARD.y + RESERVED_TOP + 2, rect.y - 22);
+  ctx2d.fillStyle = "#12213ce8";
+  roundedBox(ctx2d, rect.x, labelY, width, 19, 4);
+  ctx2d.fill();
+  ctx2d.fillStyle = "#dcf5ff";
+  ctx2d.textAlign = "left";
+  ctx2d.fillText(title, rect.x + 9, labelY + 10);
+  if (layout.frameText.trim()) {
+    ctx2d.textAlign = "center";
+    ctx2d.fillStyle = "#fff";
+    ctx2d.font = '600 16px "Space Grotesk", sans-serif';
+    ctx2d.fillText(layout.frameText.slice(0, 36),
+      rect.x + rect.w / 2, Math.min(CARD.y + CARD.height - 15, rect.y + rect.h + 16),
+      Math.max(30, rect.w));
+  }
+  if (layout.frameTarget.trim()) {
+    ctx2d.font = '600 10px "Space Grotesk", sans-serif';
+    ctx2d.fillStyle = "#b9e3fd";
+    ctx2d.textAlign = "left";
+    ctx2d.fillText("LINK / TARGET", rect.x + 6,
+      Math.min(CARD.y + CARD.height - 10, rect.y + rect.h + 33));
+  }
+  ctx2d.restore();
+}
+
 function drawScene(ctx2d, { guides = true, hud = true } = {}) {
   const layout = state.layout;
   const rect = buttonOnScreen(layout);
@@ -484,14 +617,14 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
     ctx2d.fillText("LIVEAREA CARD", CARD.x + 28, CARD.y + 38);
     ctx2d.fillStyle = "#ffffff69";
     ctx2d.font = '500 13px "Space Grotesk", sans-serif';
-    ctx2d.fillText("840 × 480 PX  /  CANVAS", CARD.x + 28, CARD.y + 60);
+    ctx2d.fillText("840 × 500 PX  /  CANVAS", CARD.x + 28, CARD.y + 60);
   }
   ctx2d.strokeStyle = "#ffffffa6";
   ctx2d.lineWidth = 2;
   ctx2d.strokeRect(CARD.x + 1, CARD.y + 1, CARD.width - 2, CARD.height - 2);
 
   // System update/manual controls occupy the top 44px of the card.
-  if (guides) {
+  if (!state.templatePreview && guides) {
     ctx2d.fillStyle = "#11182ab7";
     ctx2d.fillRect(CARD.x + 2, CARD.y + 2, CARD.width - 4, RESERVED_TOP - 2);
     ctx2d.fillStyle = "#e8e6f6";
@@ -507,7 +640,8 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
     ctx2d.setLineDash([]);
   }
 
-  if (guides) renderGuides(ctx2d, rect, layout);
+  if (state.templatePreview) drawTemplateElements(ctx2d, layout);
+  if (guides && !state.templatePreview) renderGuides(ctx2d, rect, layout);
 
   if (!layout.transparentButton) {
     ctx2d.fillStyle = PALETTE[layout.buttonColor].hex;
@@ -533,7 +667,9 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
   ctx2d.strokeStyle = "#ffffffed";
   ctx2d.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
 
-  if (guides) {
+  if (state.templatePreview) drawLiveitemLabels(ctx2d, layout, rect);
+
+  if (guides || state.templatePreview) {
     const size = 20;
     const hx = rect.x + rect.w - size / 2;
     const hy = rect.y + rect.h - size / 2;
@@ -562,7 +698,8 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
     ctx2d.fillText(`X:${center.x}  Y:${center.y}  W:${layout.w}  H:${layout.h}  R:${offsets(layout).right}  B:${offsets(layout).bottom}`, 16, 16);
     ctx2d.font = '600 12px "Space Grotesk", sans-serif';
     ctx2d.fillStyle = "#ffd988";
-    ctx2d.fillText(state.mode === "move" ? "MODE: MOVE" : "MODE: RESIZE", 16, SCREEN.height - 13);
+    ctx2d.fillText(state.templatePreview ? "TEMPLATE PREVIEW" :
+      state.mode === "move" ? "MODE: MOVE" : "MODE: RESIZE", 16, SCREEN.height - 13);
     ctx2d.fillStyle = "#c9d7eb";
     ctx2d.fillText("DRAG: MOVE / CORNER: RESIZE   ·   SHIFT + ARROWS: 10 PX", 160, SCREEN.height - 13);
     ctx2d.textAlign = "right";
@@ -649,6 +786,9 @@ function bindEditor() {
     state.guides = !state.guides;
     savePreferences();
     scheduleDraw();
+  });
+  elements.templatePreview.addEventListener("click", () => {
+    setTemplatePreview(!state.templatePreview);
   });
   elements.export.addEventListener("click", downloadImage);
   elements.package = document.getElementById("download-package");
@@ -763,6 +903,7 @@ function bindEditor() {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
     if (event.key.toLowerCase() === "m") { setMode("move"); return; }
     if (event.key.toLowerCase() === "r") { setMode("resize"); return; }
+    if (event.key.toLowerCase() === "p") { setTemplatePreview(!state.templatePreview); return; }
     let dx = 0, dy = 0;
     if (event.key === "ArrowLeft") dx = -1;
     if (event.key === "ArrowRight") dx = 1;

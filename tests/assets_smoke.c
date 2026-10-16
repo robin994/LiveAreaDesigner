@@ -42,6 +42,7 @@ int main(void) {
     DesignerConfig cfg;
     designer_defaults(&cfg);
     assert(cfg.x == 276 && cfg.y == 112 && cfg.card_color == 0);
+    assert(cfg.preview_template == 0);
     assert(lad_is_image("card.png") && lad_is_image("photo.JPG"));
     assert(lad_is_image("photo.jpeg") && !lad_is_image("photo.gif"));
     assert(!lad_is_image("photo.png.txt"));

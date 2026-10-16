@@ -22,6 +22,7 @@ typedef struct {
     int age_limit;
     int vita_only;
     int autoflip;
+    int preview_template;
     char card_image[LAD_PATH_MAX];
     char button_image[LAD_PATH_MAX];
     char gate_image[LAD_PATH_MAX];

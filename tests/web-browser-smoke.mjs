@@ -329,6 +329,73 @@ try {
   assert.ok(buttonPng.includes(Buffer.from("tRNS")));
   console.log("PASS: downloaded ZIP is valid and contains real PNG8 images + escaped XML");
 
+  const oldCanvas = await evaluate('document.getElementById("preview").toDataURL("image/png")');
+  await evaluate('document.getElementById("toggle-template-preview").click()');
+  await waitFor(() => evaluate(
+    'document.getElementById("toggle-template-preview").getAttribute("aria-pressed") === "true"'
+  ), "template preview toggle");
+  assert.equal(await evaluate('document.getElementById("template-preview-state").textContent'), "ON");
+  assert.equal(await evaluate('document.getElementById("template-preview-details").hidden'), false);
+  assert.match(await evaluate('document.getElementById("template-preview-summary").textContent'),
+    /Style a2.*frame3.*unverified/);
+  assert.notEqual(await evaluate('document.getElementById("preview").toDataURL("image/png")'),
+    oldCanvas);
+
+  const a2Canvas = await evaluate('document.getElementById("preview").toDataURL("image/png")');
+  await evaluate(`(() => {
+    const style = document.getElementById("xml-style");
+    style.value = "psmobile";
+    style.dispatchEvent(new Event("input", { bubbles: true }));
+    const frame = document.getElementById("xml-frame");
+    frame.value = "2";
+    frame.dispatchEvent(new Event("input", { bubbles: true }));
+    const text = document.getElementById("xml-text");
+    text.value = "Preview test";
+    text.dispatchEvent(new Event("change", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate(
+    'document.getElementById("template-preview-summary").textContent.includes("Style psmobile")'
+  ), "reactive template style");
+  assert.match(await evaluate('document.getElementById("template-preview-summary").textContent'),
+    /frame2.*right-aligned gate/);
+  assert.notEqual(await evaluate('document.getElementById("preview").toDataURL("image/png")'),
+    a2Canvas);
+  const beforeDrag = await evaluate(`(async () => {
+    const { buttonOnScreen } = await import("./geometry.mjs");
+    const l = JSON.parse(localStorage.getItem("livearea-designer-web-v1")).layout;
+    const r = buttonOnScreen(l);
+    return { x: r.x, y: r.y, w: r.w, h: r.h };
+  })()`);
+  metrics = await evaluate(`(() => {
+    const r = document.getElementById("preview").getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  })()`);
+  const moveFrom = point(metrics, beforeDrag.x + 30, beforeDrag.y + 45);
+  const moveTo = point(metrics, beforeDrag.x + 50, beforeDrag.y + 55);
+  const initialX = Number(await evaluate('document.getElementById("measure-x").textContent'));
+  const initialY = Number(await evaluate('document.getElementById("measure-y").textContent'));
+  await mouse("mousePressed", moveFrom.x, moveFrom.y, 1);
+  await mouse("mouseMoved", moveTo.x, moveTo.y, 1);
+  await mouse("mouseReleased", moveTo.x, moveTo.y);
+  await waitFor(() => evaluate(
+    `document.getElementById("measure-x").textContent === "${initialX + 20}"`
+  ), "drag in template preview");
+  assert.equal(Number(await evaluate('document.getElementById("measure-y").textContent')), initialY + 10);
+  const liveXml = await evaluate(`(async () => {
+    const { generateTemplate } = await import("./template.mjs");
+    return generateTemplate(JSON.parse(localStorage.getItem("livearea-designer-web-v1")).layout);
+  })()`);
+  assert.match(liveXml, /<livearea style="psmobile"/);
+  assert.match(liveXml, /<frame id="frame2"/);
+  assert.match(liveXml, /Preview test/);
+  assert.match(liveXml, new RegExp('x="' + (initialX + 20) + '"'));
+  await send("Page.reload", { ignoreCache: true });
+  await waitFor(() => evaluate('document.getElementById("template-preview-state").textContent === "ON"'),
+    "persisted template preview toggle");
+  assert.match(await evaluate('document.getElementById("template-preview-summary").textContent'),
+    /Style psmobile.*frame2/);
+  console.log("PASS: live template preview, style/frame changes, interactive drag, XML sync and persistence");
+
   await screenshot("desktop.png");
   await send("Emulation.setDeviceMetricsOverride", {
     width: 390, height: 844, deviceScaleFactor: 1, mobile: true,
