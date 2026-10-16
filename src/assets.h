@@ -8,6 +8,19 @@
 #define LAD_ITEMS_MAX 256
 #define LAD_PALETTE_COUNT 10
 #define LAD_STYLE_COUNT 19
+#define LAD_MAX_FRAMES 10
+
+/** Independent liveitem in a fixed system frame slot. */
+typedef struct {
+    int initialized;
+    int x, y, w, h;
+    int button_color, aspect_lock, aspect_width, aspect_height;
+    int transparent_button, age_limit, vita_only, autoflip;
+    char image[LAD_PATH_MAX];
+    char target[256];
+    char text[160];
+    char lang[16];
+} DesignerFrame;
 
 typedef struct {
     int x, y, w, h;
@@ -32,6 +45,7 @@ typedef struct {
     char frame_target[256];
     char frame_text[160];
     char frame_lang[16];
+    DesignerFrame frames[LAD_STYLE_COUNT][LAD_MAX_FRAMES];
 } DesignerConfig;
 
 typedef struct {
@@ -51,6 +65,10 @@ typedef struct {
 void designer_defaults(DesignerConfig *cfg);
 void designer_load(DesignerConfig *cfg);
 bool designer_save(const DesignerConfig *cfg);
+void designer_frame_snapshot(const DesignerConfig *cfg, DesignerFrame *out);
+void designer_store_active_frame(DesignerConfig *cfg);
+void designer_load_active_frame(DesignerConfig *cfg, int style, int id,
+                                const DesignerFrame *fallback);
 bool lad_is_image(const char *name);
 
 void browser_root(FileBrowser *browser);

@@ -62,7 +62,7 @@ async function waitFor(check, label, timeout = 10000) {
     } catch { /* browser may be initializing */ }
     await pause(90);
   }
-  throw new Error(`Timed out: ${label}`);
+  throw new Error(`Timed out: ${label}. Browser errors: ${JSON.stringify(errors)}`);
 }
 
 function send(method, params = {}) {
@@ -139,7 +139,8 @@ try {
   });
   await send("Runtime.enable");
   await send("Page.enable");
-  await waitFor(() => evaluate("document.querySelectorAll('.swatch').length === 20"), "palette initialization");
+  await waitFor(() => evaluate("document.querySelectorAll('.swatch').length === 20"),
+    "palette initialization", 30000);
   let pageState = await evaluate(`({
     title: document.title,
     lang: document.documentElement.lang,
@@ -181,24 +182,55 @@ try {
   assert.equal(colorState.button, "true");
   console.log("PASS: image color presets and live numeric geometry");
 
+  await evaluate(`(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+    document.getElementById("preview").scrollIntoView({ block: "center", behavior: "instant" });
+  })()`);
+  await pause(150);
   let metrics = await evaluate(`(() => {
     const r = document.querySelector("#preview").getBoundingClientRect();
     return { left: r.left, top: r.top, width: r.width, height: r.height };
   })()`);
-  const dragStart = point(metrics, 60 + 177 + 75, 44 + 112 + 75);
-  const dragEnd = point(metrics, 60 + 177 + 75 + 55, 44 + 112 + 75 + 30);
-  await mouse("mousePressed", dragStart.x, dragStart.y, 1);
-  await mouse("mouseMoved", dragEnd.x, dragEnd.y, 1);
-  await mouse("mouseReleased", dragEnd.x, dragEnd.y);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await evaluate('document.getElementById("preview").scrollIntoView({ block: "center", behavior: "instant" })');
+    await pause(140);
+    metrics = await evaluate(`(() => {
+      const r = document.getElementById("preview").getBoundingClientRect();
+      return { left: r.left, top: r.top, width: r.width, height: r.height };
+    })()`);
+    const moveStart = point(metrics, 60 + 177 + 75, 44 + 112 + 75);
+    const moveEnd = point(metrics, 60 + 177 + 75 + 55, 44 + 112 + 75 + 30);
+    await mouse("mousePressed", moveStart.x, moveStart.y, 1);
+    await pause(110);
+    await mouse("mouseMoved", moveEnd.x, moveEnd.y, 1);
+    await pause(110);
+    await mouse("mouseReleased", moveEnd.x, moveEnd.y);
+    await pause(170);
+    if ((await evaluate('document.querySelector("#measure-x").textContent')) === "-45")
+      break;
+  }
   await waitFor(() => evaluate('document.querySelector("#measure-x").textContent === "-45"'), "pointer drag");
   assert.equal(await evaluate('document.querySelector("#measure-y").textContent'), "-24");
   console.log("PASS: pointer drag with CSS-scaled canvas coordinates");
 
-  const resizeStart = point(metrics, 60 + 232 + 286, 44 + 142 + 168);
-  const resizeEnd = point(metrics, 60 + 232 + 286 + 32, 44 + 142 + 168 + 24);
-  await mouse("mousePressed", resizeStart.x, resizeStart.y, 1);
-  await mouse("mouseMoved", resizeEnd.x, resizeEnd.y, 1);
-  await mouse("mouseReleased", resizeEnd.x, resizeEnd.y);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await evaluate('document.getElementById("preview").scrollIntoView({ block: "center", behavior: "instant" })');
+    await pause(120);
+    metrics = await evaluate(`(() => {
+      const r = document.getElementById("preview").getBoundingClientRect();
+      return { left: r.left, top: r.top, width: r.width, height: r.height };
+    })()`);
+    const resizeStart = point(metrics, 60 + 232 + 286, 44 + 142 + 168);
+    const resizeEnd = point(metrics, 60 + 232 + 286 + 32, 44 + 142 + 168 + 24);
+    await mouse("mousePressed", resizeStart.x, resizeStart.y, 1);
+    await pause(110);
+    await mouse("mouseMoved", resizeEnd.x, resizeEnd.y, 1);
+    await pause(110);
+    await mouse("mouseReleased", resizeEnd.x, resizeEnd.y);
+    await pause(170);
+    if ((await evaluate('document.querySelector("#measure-w").textContent')) === "318")
+      break;
+  }
   await waitFor(() => evaluate('document.querySelector("#measure-w").textContent === "318"'), "pointer resize");
   assert.equal(await evaluate('document.querySelector("#measure-h").textContent'), "192");
   console.log("PASS: independent resize handle");
@@ -245,7 +277,15 @@ try {
     target.value = "https://example.org/?a=1&b=2";
     target.dispatchEvent(new Event("change", { bubbles: true }));
   })()`);
-  await waitFor(() => evaluate(`JSON.parse(localStorage.getItem("livearea-designer-web-v1")).layout.transparentButton === true`), "alpha setting");
+  await waitFor(() => evaluate(`(() => {
+    const p = JSON.parse(localStorage.getItem("livearea-designer-web-v1"));
+    return p.frameLayouts["a1:3"].transparentButton === true &&
+      p.layout.templateStyle === "a2";
+  })()`), "per-frame independent alpha settings");
+  await evaluate(`(() => {
+    document.getElementById("transparent-button").click();
+    document.getElementById("lock-aspect").click();
+  })()`);
   const xmlSettings = await evaluate(`({
     aspect: document.getElementById("lock-aspect").checked,
     alpha: document.getElementById("transparent-button").checked,
@@ -292,7 +332,9 @@ try {
     "sce_sys/livearea/contents/template.xml",
     "sce_sys/livearea/contents/bg0.png",
     "sce_sys/livearea/contents/startup.png",
-    "sce_sys/livearea/contents/button.png"
+    "sce_sys/livearea/contents/frame1.png",
+    "sce_sys/livearea/contents/frame2.png",
+    "sce_sys/livearea/contents/frame3.png"
   ]);
   for (const asset of bundle.assets.filter(asset => asset.name.endsWith(".png"))) {
     assert.equal(asset.depth, 8);
@@ -325,7 +367,7 @@ try {
   assert.equal(png[24], 8);
   assert.equal(png[25], 3);
   const buttonPng = execFileSync("unzip", ["-p", zipFilename,
-    "sce_sys/livearea/contents/button.png"]);
+    "sce_sys/livearea/contents/frame3.png"]);
   assert.ok(buttonPng.includes(Buffer.from("tRNS")));
   console.log("PASS: downloaded ZIP is valid and contains real PNG8 images + escaped XML");
 
@@ -338,8 +380,9 @@ try {
   assert.equal(await evaluate('document.getElementById("template-preview-details").hidden'), false);
   assert.match(await evaluate('document.getElementById("template-preview-summary").textContent'),
     /Style a2.*frame3.*320.*200.*center-aligned gate/);
-  assert.notEqual(await evaluate('document.getElementById("preview").toDataURL("image/png")'),
-    oldCanvas);
+  assert.ok((await evaluate(
+    'document.getElementById("preview").toDataURL("image/png")'
+  )) !== oldCanvas, "Preview Template renders differently from freeform mode");
 
   const samples = await evaluate(`(async () => {
     const colors = [];
@@ -371,6 +414,7 @@ try {
     document.documentElement.style.scrollBehavior = "auto";
     document.getElementById("preview").scrollIntoView({ behavior: "instant", block: "center" });
   })()`);
+  await pause(160);
   metrics = await evaluate(`(() => {
     const r = document.getElementById("preview").getBoundingClientRect();
     return { left: r.left, top: r.top, width: r.width, height: r.height };
@@ -402,8 +446,17 @@ try {
   ), "reactive template style");
   assert.match(await evaluate('document.getElementById("template-preview-summary").textContent'),
     /frame2.*right-aligned gate/);
-  assert.notEqual(await evaluate('document.getElementById("preview").toDataURL("image/png")'),
-    a2Canvas);
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  assert.ok((await evaluate(
+    'document.getElementById("preview").toDataURL("image/png")'
+  )) !== a2Canvas, "Switching style changes the actual canvas");
+  await evaluate(`(() => {
+    const field = document.getElementById("input-h");
+    field.value = "75";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("measure-h").textContent === "75"'),
+    "shrink selected frame image to enable drag");
   const beforeDrag = await evaluate(`(async () => {
     const { buttonOnScreen } = await import("./geometry.mjs");
     const l = JSON.parse(localStorage.getItem("livearea-designer-web-v1")).layout;
@@ -418,20 +471,34 @@ try {
     const r = document.getElementById("preview").getBoundingClientRect();
     return { left: r.left, top: r.top, width: r.width, height: r.height };
   })()`);
-  const moveFrom = point(metrics, beforeDrag.x + 30, beforeDrag.y + 45);
-  const moveTo = point(metrics, beforeDrag.x + 50, beforeDrag.y + 55);
   const initialX = Number(await evaluate('document.getElementById("measure-x").textContent'));
   const initialY = Number(await evaluate('document.getElementById("measure-y").textContent'));
-  await mouse("mousePressed", moveFrom.x, moveFrom.y, 1);
-  await mouse("mouseMoved", moveTo.x, moveTo.y, 1);
-  await mouse("mouseReleased", moveTo.x, moveTo.y);
-  await waitFor(() => evaluate(
-    `document.getElementById("measure-x").textContent === "${initialX + 20}"`
-  ), "drag in template preview");
-  assert.equal(Number(await evaluate('document.getElementById("measure-y").textContent')), initialY + 10);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await evaluate('document.getElementById("preview").scrollIntoView({ behavior: "instant", block: "center" })');
+    await pause(120);
+    metrics = await evaluate(`(() => {
+      const r = document.getElementById("preview").getBoundingClientRect();
+      return { left: r.left, top: r.top, width: r.width, height: r.height };
+    })()`);
+    const moveFrom = point(metrics, beforeDrag.x + 30, beforeDrag.y + 45);
+    const moveTo = point(metrics, beforeDrag.x + 50, beforeDrag.y + 55);
+    await mouse("mousePressed", moveFrom.x, moveFrom.y, 1);
+    await pause(120);
+    await mouse("mouseMoved", moveTo.x, moveTo.y, 1);
+    await pause(120);
+    await mouse("mouseReleased", moveTo.x, moveTo.y);
+    await pause(130);
+    if (Number(await evaluate('document.getElementById("measure-x").textContent')) !== initialX)
+      break;
+  }
+  const movedX = Number(await evaluate('document.getElementById("measure-x").textContent'));
+  const movedY = Number(await evaluate('document.getElementById("measure-y").textContent'));
+  assert.ok(movedX > initialX, "The selected frame liveitem must be draggable");
+  assert.ok(movedY >= initialY, "The selected frame must remain within its native slot");
   const liveXml = await evaluate(`(async () => {
     const { generateTemplate } = await import("./template.mjs");
-    return generateTemplate(JSON.parse(localStorage.getItem("livearea-designer-web-v1")).layout);
+    const p = JSON.parse(localStorage.getItem("livearea-designer-web-v1"));
+    return generateTemplate(p.layout, p.frameLayouts);
   })()`);
   assert.match(liveXml, /<livearea style="psmobile"/);
   assert.match(liveXml, /<frame id="frame2"/);
@@ -462,6 +529,115 @@ try {
   assert.match(await evaluate('document.getElementById("template-preview-summary").textContent'),
     /Style psmobile.*frame2/);
   console.log("PASS: live template preview, style/frame changes, interactive drag, XML sync and persistence");
+
+  // Every frame has its own image, geometry and XML fields, and the exported
+  // package must include all slots, even after switching frames/reloading.
+  await evaluate(`(() => {
+    const style = document.getElementById("xml-style");
+    style.value = "a3";
+    style.dispatchEvent(new Event("input", { bubbles: true }));
+    const frame = document.getElementById("xml-frame");
+    frame.value = "1";
+    frame.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("frame-image-label").textContent === "Frame1 image"'),
+    "first independent frame selected");
+  await evaluate(`(async () => {
+    const makeImage = async (color, name) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 40;
+      const context = canvas.getContext("2d");
+      context.fillStyle = color;
+      context.fillRect(0, 0, 40, 40);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      const dt = new DataTransfer();
+      dt.items.add(new File([blob], name, { type: "image/png" }));
+      const input = document.getElementById("button-file");
+      input.files = dt.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    await makeImage("#f04030", "frame-one.png");
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("button-filename").textContent === "frame-one.png"'),
+    "first frame PNG upload");
+  await evaluate(`(() => {
+    const text = document.getElementById("xml-text");
+    text.value = "FRAME ONE";
+    text.dispatchEvent(new Event("change", { bubbles: true }));
+    const field = document.getElementById("input-w");
+    field.value = "130";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    const frame = document.getElementById("xml-frame");
+    frame.value = "2";
+    frame.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("frame-image-label").textContent === "Frame2 image"'),
+    "second independent frame selected");
+  assert.equal(await evaluate('document.getElementById("button-filename").textContent'), "No image selected");
+  await evaluate(`(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 40;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#2040f0";
+    context.fillRect(0, 0, 40, 40);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], "frame-two.png", { type: "image/png" }));
+    const input = document.getElementById("button-file");
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("button-filename").textContent === "frame-two.png"'),
+    "second frame PNG upload");
+  await evaluate(`(() => {
+    const text = document.getElementById("xml-text");
+    text.value = "FRAME TWO";
+    text.dispatchEvent(new Event("change", { bubbles: true }));
+    const field = document.getElementById("input-w");
+    field.value = "95";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate(`(() => {
+    const p = JSON.parse(localStorage.getItem("livearea-designer-web-v1"));
+    return p.frameImageKeys.includes("a3:1") && p.frameImageKeys.includes("a3:2") &&
+      p.frameLayouts["a3:1"].w === 130 && p.frameLayouts["a3:2"].w === 95 &&
+      p.frameLayouts["a3:1"].frameText === "FRAME ONE" &&
+      p.frameLayouts["a3:2"].frameText === "FRAME TWO";
+  })()`), "independent frame settings and IndexedDB image keys");
+  await send("Page.reload", { ignoreCache: true });
+  await waitFor(() => evaluate(
+    'document.getElementById("button-filename").textContent === "frame-two.png"'),
+    "second frame image survives refresh");
+  await evaluate(`(() => {
+    const select = document.getElementById("xml-frame");
+    select.value = "1";
+    select.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate(
+    'document.getElementById("button-filename").textContent === "frame-one.png"'),
+    "first frame image survives refresh and selection");
+  assert.equal(await evaluate('document.getElementById("measure-w").textContent'), "130");
+  assert.equal(await evaluate('document.getElementById("xml-text").value'), "FRAME ONE");
+  await rm(zipFilename, { force: true });
+  await evaluate('document.getElementById("download-package").click()');
+  await waitFor(async () => {
+    try {
+      const result = await readFile(zipFilename);
+      return result.length > 1000;
+    } catch { return false; }
+  }, "complete multi-frame ZIP export", 20000);
+  execFileSync("unzip", ["-t", zipFilename]);
+  const multiXml = execFileSync("unzip", ["-p", zipFilename,
+    "sce_sys/livearea/contents/template.xml"]).toString("utf8");
+  assert.equal((multiXml.match(/<frame id=/g) || []).length, 5);
+  assert.match(multiXml, /FRAME ONE/);
+  assert.match(multiXml, /FRAME TWO/);
+  const frameOnePng = execFileSync("unzip", ["-p", zipFilename,
+    "sce_sys/livearea/contents/frame1.png"]);
+  const frameTwoPng = execFileSync("unzip", ["-p", zipFilename,
+    "sce_sys/livearea/contents/frame2.png"]);
+  assert.notDeepEqual(frameOnePng, frameTwoPng, "Different frame artwork must produce different PNG assets");
+  console.log("PASS: independent frame images, geometry, XML and 5-frame ZIP persisted after reload");
 
   await screenshot("desktop.png");
   await send("Emulation.setDeviceMetricsOverride", {

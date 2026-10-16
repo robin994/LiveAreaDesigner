@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.23 - 2026-10-16 (experimental pre-release)
+
+- Preview Template no longer draws an extra freeform rectangle over the system layout. Every native frame displays its own liveitem **inside its matching RCO frame slot**.
+- Per-frame state: independent PNG/JPG artwork, position, size, background palette, transparency, aspect-ratio lock, target URI, text and optional language restrictions.
+- Web: clicking a frame switches the inspector to that frame's image and settings. Move/resize its content, not the immutable system slot. Per-frame images are stored in IndexedDB, geometry and other settings in localStorage.
+- Vita: frame selection restores the frame's own image and settings; cached, downscaled textures draw all frames at once. Each frame's configuration is persisted in `settings.ini`.
+- Both exporters now generate **all frame elements** in `template.xml`, each referring to `frame1.png`, `frame2.png` and so on, plus a corresponding indexed PNG8 asset. Previously exported single-frame `button.png` is replaced by frame-specific filenames.
+- Existing legacy single-button projects are migrated into the active frame; user assets are not deleted.
+- Added regression tests proving independence across two frames, persistence across reload, multi-frame XML and ZIP integrity.
+- Fixed-slot geometry is hardware-derived, but the Vita shell's artwork and clipping effects remain simplified; hardware validation is still required.
+
 ## v1.22 - 2026-10-16 (pre-release)
 
 - Fixed the Preview Template regression where selecting `a1`–`a5` barely changed the visual layout.

@@ -1,5 +1,6 @@
-import { CARD, PALETTE } from "./geometry.mjs?v=1.22";
-import { generateTemplate } from "./template.mjs?v=1.22";
+import { CARD, PALETTE } from "./geometry.mjs?v=1.23";
+import { generateTemplate } from "./template.mjs?v=1.23";
+import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.23";
 
 const encoder = new TextEncoder();
 const SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
@@ -151,15 +152,20 @@ async function addImage(entries, filename, w, h, color, image, transparency, pla
  * Frame liveitem positions are frame-relative and should be tested with the
  * selected real Vita layout; the editor cannot change fixed gate/frame slots.
  */
-export async function buildLiveAreaPackage(layout, images) {
+export async function buildLiveAreaPackage(layout, images, frameLayouts = {}) {
   const root = "sce_sys/livearea/contents/";
-  const entries = [{ name: root + "template.xml", data: generateTemplate(layout) }];
+  const entries = [{ name: root + "template.xml", data: generateTemplate(layout, frameLayouts) }];
   await addImage(entries, root + "bg0.png", CARD.width, CARD.height,
     PALETTE[layout.cardColor].hex, images.card, false);
   await addImage(entries, root + "startup.png", 280, 158,
     PALETTE[layout.buttonColor].hex, images.gate, true, !images.gate);
-  await addImage(entries, root + "button.png", layout.w, layout.h,
-    PALETTE[layout.buttonColor].hex, images.button, layout.transparentButton);
+  for (const item of allFrameLayouts(layout, frameLayouts)) {
+    const key = frameKey(item.templateStyle, item.frameId);
+    await addImage(entries, root + `frame${item.frameId}.png`, item.w, item.h,
+      PALETTE[item.buttonColor].hex,
+      images.frames?.[key] ?? (item.frameId === layout.frameId ? images.button : null),
+      item.transparentButton);
+  }
   if (images.icon) await addImage(entries, "sce_sys/icon0.png", 128, 128, "#000000", images.icon, false);
   if (images.boot) await addImage(entries, "sce_sys/pic0.png", 960, 544, "#000000", images.boot, false);
   for (const [i, page] of (images.manual || []).entries()) {

@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=1.22">
-  <script type="module" src="./app.js?v=1.22"></script>
+  <link rel="stylesheet" href="./styles.css?v=1.23">
+  <script type="module" src="./app.js?v=1.23"></script>
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -23,11 +23,11 @@
       <span class="brand-name">LIVEAREA <strong>DESIGNER</strong><small>PS VITA DESIGN TOOL</small></span>
     </a>
     <div class="header-right">
-      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.22</span>
+      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.23</span>
       <a class="header-link" href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">
         GitHub <span aria-hidden="true">↗</span>
       </a>
-      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.22" target="_blank" rel="noopener noreferrer">
+      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.23" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 17v3h16v-3"/></svg>
         Download VPK
       </a>
@@ -82,7 +82,7 @@
             </button>
           </div>
           <div class="canvas-wrap">
-            <canvas id="preview" width="960" height="544" tabindex="0" aria-label="PlayStation Vita preview at 960 by 544 pixels. Drag the button to move it; drag the yellow bottom-right handle to resize it.">
+            <canvas id="preview" width="960" height="544" tabindex="0" aria-label="PS Vita LiveArea: in Template Preview, select any native frame to edit its image and drag or resize its liveitem content.">
               Your browser does not support Canvas.
             </canvas>
             <span class="screen-corner screen-corner-tl" aria-hidden="true"></span>
@@ -91,7 +91,7 @@
             <span class="screen-corner screen-corner-br" aria-hidden="true"></span>
           </div>
           <div class="preview-bottom">
-            <div class="help-copy"><span class="pointer-symbol" aria-hidden="true">↗</span> Drag the button or its yellow resize handle. The top 44px system area is protected.</div>
+            <div class="help-copy"><span class="pointer-symbol" aria-hidden="true">↗</span> In Template Preview, choose a frame and edit its own liveitem. Drag the content or its yellow resize handle.</div>
             <span class="keyboard-tip">ARROWS <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> <small>SHIFT × 10</small></span>
           </div>
           <div id="template-preview-details" class="template-preview-details" hidden>
@@ -101,7 +101,7 @@
               <span id="template-frame-offsets" aria-live="polite">Frame offsets: X 0 · Y 0</span>
               <button type="button" id="fit-template-frame">Fit image to selected frame</button>
             </div>
-            <p id="template-fit-warning">Frame outlines and centers come from PS Vita firmware RCO layouts. Select a frame in the canvas, then drag/resize or fit the image. System decorations remain illustrative.</p>
+            <p id="template-fit-warning">System frame slots remain fixed. Each frame has independent artwork, link, text, size and position; select one and upload its own image.</p>
           </div>
         </div>
 
@@ -156,12 +156,12 @@
           <div class="asset-card" id="button-drop">
             <div class="asset-topline">
               <div class="asset-thumb" id="button-thumb"><span class="asset-thumb-icon" aria-hidden="true">▣</span></div>
-              <div class="asset-name"><strong>Button</strong><span id="button-filename" title="No file selected">No image selected</span></div>
-              <span class="asset-tag">SCALABLE</span>
+              <div class="asset-name"><strong id="frame-image-label">Frame3 image</strong><span id="button-filename" title="No file selected">No image selected</span></div>
+              <span class="asset-tag" id="frame-image-key">A1 / FRAME3</span>
             </div>
             <div class="asset-buttons">
-              <button type="button" class="asset-upload" id="button-upload">+ Upload PNG / JPG</button>
-              <button type="button" class="asset-clear" id="button-clear" aria-label="Remove button image">Remove</button>
+              <button type="button" class="asset-upload" id="button-upload">+ Upload frame image</button>
+              <button type="button" class="asset-clear" id="button-clear" aria-label="Remove selected frame image">Remove</button>
             </div>
             <input id="button-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
           </div>
@@ -212,15 +212,15 @@
             <div class="swatches" id="card-palette" role="group" aria-labelledby="palette-card-label"></div>
           </div>
           <div class="palette-group">
-            <div class="palette-heading"><label id="palette-button-label">Button background</label><output id="button-color-name">Magenta</output></div>
+            <div class="palette-heading"><label id="palette-button-label">Selected frame background</label><output id="button-color-name">Magenta</output></div>
             <div class="swatches" id="button-palette" role="group" aria-labelledby="palette-button-label"></div>
           </div>
-          <p class="section-note">The selected background color shows through transparent areas of an image.</p>
+          <p class="section-note">Each frame keeps its own background color and transparency. Changing frames restores its saved settings and image.</p>
         </section>
 
         <section class="inspector-section inspector-geometry" aria-labelledby="geometry-title">
           <div class="subhead"><span class="sub-number">03</span><h3 id="geometry-title">Geometry</h3><span class="sub-rule"></span></div>
-          <p class="geometry-caption">The card center is (0, 0). Left/up are negative; right/down are positive. All positions stay below the reserved top strip.</p>
+          <p class="geometry-caption">Edit the selected frame's liveitem: X/Y are relative to the card center; the exported XML uses the native frame center. Native frame slots cannot be moved.</p>
           <div class="geometry-inputs">
             <label class="field"><span>X <small>FROM CENTER</small></span><div class="input-container"><input id="input-x" type="number" min="-420" max="420" step="1" inputmode="numeric" value="-1"><span>px</span></div></label>
             <label class="field"><span>Y <small>FROM CENTER</small></span><div class="input-container"><input id="input-y" type="number" min="-250" max="250" step="1" inputmode="numeric" value="-54"><span>px</span></div></label>

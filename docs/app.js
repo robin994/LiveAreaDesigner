@@ -2,13 +2,16 @@ import {
   SCREEN, CARD, RESERVED_TOP, PALETTE, DEFAULT_LAYOUT, centeredOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
-} from "./geometry.mjs?v=1.22";
-import { generateTemplate } from "./template.mjs?v=1.22";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.22";
+} from "./geometry.mjs?v=1.23";
+import { generateTemplate } from "./template.mjs?v=1.23";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.23";
 import {
   previewGate, previewFrames, previewSummary, frameRelativeOffsets,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
-} from "./template-preview.mjs?v=1.22";
+} from "./template-preview.mjs?v=1.23";
+import {
+  frameKey, frameLayoutFor, allFrameLayouts, clampLiveitemToFrame
+} from "./frame-model.mjs?v=1.23";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";
@@ -41,12 +44,18 @@ const fields = Object.fromEntries(
 const stored = restorePreferences();
 const state = {
   layout: normalizeLayout(stored?.layout ?? DEFAULT_LAYOUT),
+  frameLayouts: stored?.frameLayouts && typeof stored.frameLayouts === "object"
+    ? stored.frameLayouts : {},
+  frameImageKeys: Array.isArray(stored?.frameImageKeys) ? stored.frameImageKeys : [],
   mode: stored?.mode === "resize" ? "resize" : "move",
   guides: stored?.guides !== false,
   templatePreview: stored?.templatePreview === true,
-  images: { card: null, button: null, gate: null, icon: null, boot: null, manual: [] },
+  images: { card: null, button: null, frames: {}, gate: null, icon: null, boot: null, manual: [] },
   drag: null
 };
+const initialFrameKey = frameKey(state.layout.templateStyle, state.layout.frameId);
+state.frameLayouts[initialFrameKey] = { ...state.layout };
+state.images.button = null;
 let drawScheduled = false;
 let toastTimeout = 0;
 
@@ -68,7 +77,9 @@ function savePreferences() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
       layout: state.layout, mode: state.mode, guides: state.guides,
-      templatePreview: state.templatePreview
+      templatePreview: state.templatePreview,
+      frameLayouts: state.frameLayouts,
+      frameImageKeys: state.frameImageKeys
     }));
     status("Saved in this browser");
   } catch {
@@ -161,12 +172,19 @@ async function validateFile(file) {
     throw new Error("The file does not contain a valid PNG or JPG image.");
 }
 
-function replaceImage(target, loaded) {
-  const previous = state.images[target];
-  state.images[target] = loaded;
+function replaceImage(target, loaded, forKey = frameKey(state.layout.templateStyle, state.layout.frameId)) {
+  const previous = target === "button" ? state.images.frames[forKey] : state.images[target];
+  if (target === "button") {
+    if (loaded) state.images.frames[forKey] = loaded;
+    else delete state.images.frames[forKey];
+    if (forKey === frameKey(state.layout.templateStyle, state.layout.frameId))
+      state.images.button = loaded;
+  } else state.images[target] = loaded;
   if (previous) URL.revokeObjectURL(previous.url);
-  updateAssetUI(target);
-  if (target === "button" && loaded?.image) {
+  if (target !== "button" || forKey === frameKey(state.layout.templateStyle, state.layout.frameId))
+    updateAssetUI(target);
+  if (target === "button" && loaded?.image &&
+      forKey === frameKey(state.layout.templateStyle, state.layout.frameId)) {
     const ratio = loaded.image.naturalWidth / loaded.image.naturalHeight;
     if (state.layout.lockAspect) {
       const next = { ...state.layout, aspectRatio: ratio };
@@ -181,14 +199,20 @@ function replaceImage(target, loaded) {
 async function chooseImage(target, file) {
   if (!file) return;
   let loaded;
+  const forKey = frameKey(state.layout.templateStyle, state.layout.frameId);
   try {
     await validateFile(file);
     loaded = await imageDimensions(file, file.name);
-    replaceImage(target, loaded);
+    replaceImage(target, loaded, forKey);
     try {
-      await assetOperation("put", target, { blob: file, name: file.name });
+      const storageKey = target === "button" ? `frame:${forKey}` : target;
+      await assetOperation("put", storageKey, { blob: file, name: file.name });
+      if (target === "button" && !state.frameImageKeys.includes(forKey)) {
+        state.frameImageKeys.push(forKey);
+        savePreferences();
+      }
       status("Saved in this browser");
-      notice(`${target === "card" ? "Card" : "Button"} image uploaded and saved locally.`);
+      notice(`${target === "button" ? `Frame ${forKey}` : target} image uploaded and saved locally.`);
     } catch {
       status("Image available for this session only", false);
       notice("Image loaded, but your browser could not save it for future visits.");
@@ -200,9 +224,14 @@ async function chooseImage(target, file) {
 }
 
 async function clearImage(target) {
-  replaceImage(target, null);
+  const forKey = frameKey(state.layout.templateStyle, state.layout.frameId);
+  replaceImage(target, null, forKey);
   try {
-    await assetOperation("delete", target);
+    await assetOperation("delete", target === "button" ? `frame:${forKey}` : target);
+    if (target === "button") {
+      state.frameImageKeys = state.frameImageKeys.filter(key => key !== forKey);
+      savePreferences();
+    }
     status("Saved in this browser");
     notice(`${target === "card" ? "Card" : "Button"} image removed.`);
   } catch {
@@ -212,7 +241,7 @@ async function clearImage(target) {
 }
 
 async function restoreImages() {
-  for (const target of ["card", "button", "gate", "icon", "boot"]) {
+  for (const target of ["card", "gate", "icon", "boot"]) {
     try {
       const saved = await assetOperation("get", target);
       if (!saved?.blob || !saved.name) continue;
@@ -223,6 +252,29 @@ async function restoreImages() {
       console.warn(`Saved ${target} image is unavailable:`, error);
     }
   }
+  // Migrate the old single button image without deleting existing user data.
+  for (const forKey of new Set([initialFrameKey, ...state.frameImageKeys])) {
+    try {
+      let saved = await assetOperation("get", `frame:${forKey}`);
+      if (!saved && forKey === initialFrameKey) {
+        saved = await assetOperation("get", "button");
+        if (saved) {
+          await assetOperation("put", `frame:${forKey}`, saved);
+          if (!state.frameImageKeys.includes(forKey)) state.frameImageKeys.push(forKey);
+        }
+      }
+      if (!saved?.blob) continue;
+      const file = new File([saved.blob], saved.name, { type: saved.blob.type });
+      await validateFile(file);
+      const loaded = await imageDimensions(saved.blob, saved.name);
+      replaceImage("button", loaded, forKey);
+    } catch (error) {
+      console.warn(`Could not restore frame ${forKey} image`, error);
+    }
+  }
+  state.images.button = state.images.frames[frameKey(state.layout.templateStyle, state.layout.frameId)] || null;
+  updateAssetUI("button");
+  savePreferences();
   try {
     const items = await assetOperation("get", "manual");
     if (Array.isArray(items) && items.length <= 10) {
@@ -281,6 +333,12 @@ function updateAssetUI(target) {
   const image = state.images[target];
   const thumb = document.getElementById(`${target}-thumb`);
   const filename = document.getElementById(`${target}-filename`);
+  if (target === "button") {
+    document.getElementById("frame-image-label").textContent =
+      `Frame${state.layout.frameId} image`;
+    document.getElementById("frame-image-key").textContent =
+      `${state.layout.templateStyle.toUpperCase()} / FRAME${state.layout.frameId}`;
+  }
   const color = PALETTE[state.layout[target === "card" ? "cardColor" : "buttonColor"]].hex;
   thumb.style.backgroundColor = color;
   thumb.style.backgroundImage = image ? `url("${image.url}")` : "none";
@@ -410,7 +468,25 @@ function scheduleDraw() {
 }
 
 function setLayout(next, persist = true) {
-  state.layout = normalizeLayout(next);
+  const wanted = normalizeLayout(next);
+  const before = frameKey(state.layout.templateStyle, state.layout.frameId);
+  const after = frameKey(wanted.templateStyle, wanted.frameId);
+  state.frameLayouts[before] = { ...state.layout };
+  if (before !== after) {
+    // Switching frames selects its own independent geometry, palette and XML
+    // fields; changing styles never overwrites a different frame's data.
+    const restored = frameLayoutFor(wanted.templateStyle, wanted.frameId,
+      null, state.frameLayouts);
+    state.layout = normalizeLayout({
+      ...restored, cardColor: wanted.cardColor,
+      templateStyle: wanted.templateStyle, frameId: wanted.frameId
+    });
+    state.images.button = state.images.frames[after] || null;
+  } else {
+    state.layout = wanted;
+  }
+  state.frameLayouts[after] = { ...state.layout };
+  if (before !== after) updateInterface();
   if (persist) savePreferences();
   scheduleDraw();
 }
@@ -618,6 +694,71 @@ function drawLiveitemLabels(ctx2d, layout, rect) {
   ctx2d.restore();
 }
 
+/** Draw each liveitem only within its corresponding firmware frame slot. */
+function drawFrameLiveitems(ctx2d, layout) {
+  const slots = previewFrames(layout);
+  for (const slot of slots) {
+    const item = frameLayoutFor(layout.templateStyle, slot.id, layout, state.frameLayouts);
+    const image = state.images.frames[frameKey(layout.templateStyle, slot.id)];
+    const rect = buttonOnScreen(item);
+    const isSelected = slot.id === layout.frameId;
+    const clip = slot.dynamic ?
+      { x: slot.centerX - 32, y: slot.centerY - 15, w: 64, h: 30 } : slot;
+    ctx2d.save();
+    ctx2d.beginPath();
+    ctx2d.rect(clip.x, clip.y, clip.w, clip.h);
+    ctx2d.clip();
+    if (!item.transparentButton) {
+      ctx2d.globalAlpha = image ? 1 : .52;
+      ctx2d.fillStyle = PALETTE[item.buttonColor].hex;
+      ctx2d.fillRect(rect.x, rect.y, rect.w, rect.h);
+      ctx2d.globalAlpha = 1;
+    }
+    if (image?.image) {
+      ctx2d.drawImage(image.image, rect.x, rect.y, rect.w, rect.h);
+    } else {
+      ctx2d.fillStyle = "#e8e5f4";
+      ctx2d.font = '700 12px "Space Grotesk", sans-serif';
+      ctx2d.textAlign = "center";
+      ctx2d.textBaseline = "middle";
+      ctx2d.fillText(`FRAME${slot.id} · UPLOAD IMAGE`,
+        slot.centerX, slot.centerY, Math.max(30, clip.w - 10));
+    }
+    if (item.frameText?.trim()) {
+      ctx2d.textAlign = "center";
+      ctx2d.font = '600 14px "Space Grotesk", sans-serif';
+      ctx2d.fillStyle = "#ffffff";
+      ctx2d.shadowColor = "#0a133d";
+      ctx2d.shadowBlur = 4;
+      ctx2d.fillText(item.frameText.slice(0, 48),
+        rect.x + rect.w / 2, Math.min(rect.y + rect.h - 8, clip.y + clip.h - 10),
+        Math.max(30, rect.w - 8));
+    }
+    ctx2d.restore();
+
+    // The slot is immutable. Editing handles belong to the selected item's
+    // content and never imply that Sony's system frame itself can be moved.
+    if (isSelected) {
+      ctx2d.save();
+      ctx2d.strokeStyle = imageFitsSelectedFrame(item) ? "#ffd477" : "#ff988a";
+      ctx2d.lineWidth = 2.5;
+      ctx2d.strokeRect(clip.x + 1, clip.y + 1, clip.w - 2, clip.h - 2);
+      ctx2d.strokeStyle = "#e8faed";
+      ctx2d.setLineDash([4, 4]);
+      ctx2d.strokeRect(rect.x, rect.y, rect.w, rect.h);
+      ctx2d.setLineDash([]);
+      const handleX = rect.x + rect.w - 10;
+      const handleY = rect.y + rect.h - 10;
+      ctx2d.fillStyle = "#f9d36c";
+      roundedBox(ctx2d, handleX, handleY, 20, 20, 4);
+      ctx2d.fill();
+      ctx2d.strokeStyle = "#553b18";
+      ctx2d.stroke();
+      ctx2d.restore();
+    }
+  }
+}
+
 function drawScene(ctx2d, { guides = true, hud = true } = {}) {
   const layout = state.layout;
   const rect = buttonOnScreen(layout);
@@ -670,6 +811,9 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
   if (state.templatePreview) drawTemplateElements(ctx2d, layout);
   if (guides && !state.templatePreview) renderGuides(ctx2d, rect, layout);
 
+  if (state.templatePreview) {
+    drawFrameLiveitems(ctx2d, layout);
+  } else {
   if (!layout.transparentButton) {
     ctx2d.fillStyle = PALETTE[layout.buttonColor].hex;
     ctx2d.fillRect(rect.x, rect.y, rect.w, rect.h);
@@ -695,9 +839,7 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
     "#ff9585" : "#ffffffed";
   ctx2d.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
 
-  if (state.templatePreview) drawLiveitemLabels(ctx2d, layout, rect);
-
-  if (guides || state.templatePreview) {
+  if (guides) {
     const size = 20;
     const hx = rect.x + rect.w - size / 2;
     const hy = rect.y + rect.h - size / 2;
@@ -712,6 +854,7 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
     ctx2d.moveTo(hx + 6, hy + 14);
     ctx2d.lineTo(hx + 14, hy + 6);
     ctx2d.stroke();
+  }
   }
 
   if (hud) {
@@ -767,7 +910,7 @@ function downloadBlob(blob, filename) {
 }
 
 function downloadTemplate() {
-  downloadBlob(new Blob([generateTemplate(state.layout)], { type: "application/xml;charset=utf-8" }), "template.xml");
+  downloadBlob(new Blob([generateTemplate(state.layout, state.frameLayouts)], { type: "application/xml;charset=utf-8" }), "template.xml");
   notice("template.xml downloaded. Export the ZIP for its referenced assets.");
 }
 
@@ -775,7 +918,7 @@ async function downloadPackage() {
   const buttons = [elements.package, document.getElementById("download-package-side")];
   for (const button of buttons) button.disabled = true;
   try {
-    const pack = await buildLiveAreaPackage(state.layout, state.images);
+    const pack = await buildLiveAreaPackage(state.layout, state.images, state.frameLayouts);
     downloadBlob(pack, "LiveAreaDesigner-assets.zip");
     notice("LiveArea ZIP exported with indexed PNGs and template.xml.");
   } catch (error) {
@@ -837,17 +980,19 @@ function bindEditor() {
   const editGeometry = (key, raw) => {
     const number = Number(raw);
     if (!Number.isFinite(number)) return;
+    const commitGeometry = next =>
+      setLayout(state.templatePreview ? clampLiveitemToFrame(next) : next);
     if (key === "x" || key === "y") {
       const position = key === "x"
         ? Math.round(number + CARD.width / 2 - state.layout.w / 2)
         : Math.round(number + CARD.height / 2 - state.layout.h / 2);
-      setLayout({ ...state.layout, [key]: position });
+      commitGeometry({ ...state.layout, [key]: position });
     } else if (state.layout.lockAspect) {
-      setLayout(dragLayout(state.layout, key === "w" ? number - state.layout.w : 0,
+      commitGeometry(dragLayout(state.layout, key === "w" ? number - state.layout.w : 0,
         key === "h" ? number - state.layout.h : 0, "resize"));
     } else {
       const next = { ...state.layout, [key]: number };
-      setLayout(next);
+      commitGeometry(next);
     }
   };
   for (const [key, input] of Object.entries(fields)) {
@@ -891,20 +1036,23 @@ function bindEditor() {
   canvas.addEventListener("pointerdown", event => {
     if (state.drag || !event.isPrimary) return;
     const point = toCanvasPoint(event.clientX, event.clientY, canvas.getBoundingClientRect());
-    const action = hitTest(state.layout, point);
-    if (!action) {
-      if (state.templatePreview) {
-        const frame = previewFrames(state.layout).find(slot =>
-          point.x >= slot.x && point.x <= slot.x + slot.w &&
-          point.y >= slot.y && point.y <= slot.y + slot.h
-        );
-        if (frame && frame.id !== state.layout.frameId) {
-          setLayout({ ...state.layout, frameId: frame.id });
-          notice(`Frame${frame.id} selected. Drag the image or use Fit to frame.`);
-        }
+    if (state.templatePreview) {
+      const frames = previewFrames(state.layout);
+      // Prefer the currently selected frame where native slots overlap.
+      const ordered = [frames[state.layout.frameId - 1], ...frames].filter(Boolean);
+      const frame = ordered.find(slot =>
+        point.x >= slot.x && point.x <= slot.x + slot.w &&
+        point.y >= slot.y && point.y <= slot.y + slot.h
+      );
+      if (!frame) return;
+      if (frame.id !== state.layout.frameId) {
+        setLayout({ ...state.layout, frameId: frame.id });
+        notice(`Editing frame${frame.id}. Load its own image or drag its liveitem.`);
+        return;
       }
-      return;
     }
+    const action = hitTest(state.layout, point);
+    if (!action) return;
     event.preventDefault();
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(event.pointerId);
@@ -927,7 +1075,9 @@ function bindEditor() {
     }
     if (event.pointerId !== state.drag.pointerId) return;
     const { initial, origin, action } = state.drag;
-    setLayout(dragLayout(initial, point.x - origin.x, point.y - origin.y, action), false);
+    let updated = dragLayout(initial, point.x - origin.x, point.y - origin.y, action);
+    if (state.templatePreview) updated = clampLiveitemToFrame(updated);
+    setLayout(updated, false);
   });
 
   function releasePointer(event) {
@@ -961,7 +1111,9 @@ function bindEditor() {
     if (event.key === "ArrowDown") dy = 1;
     if (dx || dy) {
       event.preventDefault();
-      setLayout(stepLayout(state.layout, dx, dy, state.mode, event.shiftKey ? 10 : 1));
+      let updated = stepLayout(state.layout, dx, dy, state.mode, event.shiftKey ? 10 : 1);
+      if (state.templatePreview) updated = clampLiveitemToFrame(updated);
+      setLayout(updated);
     }
   });
 }

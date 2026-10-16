@@ -12,6 +12,8 @@
 bool lad_write_template(FILE *out, const DesignerConfig *config);
 int lad_center_x(const DesignerConfig *config);
 int lad_center_y(const DesignerConfig *config);
+void lad_resolve_frame(const DesignerConfig *config, int frame_id,
+                       DesignerFrame *out);
 
 /* Vita-specific PNG8 asset writer + template.xml output directory. */
 bool lad_export_bundle(const DesignerConfig *config, char *error, size_t error_size);

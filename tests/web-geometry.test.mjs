@@ -11,6 +11,10 @@ import {
   imageFitsSelectedFrame, fitImageToSelectedFrame
 } from "../docs/template-preview.mjs";
 import { getRcoLayout, frameCount } from "../docs/template-slots.mjs";
+import {
+  frameKey, frameLayoutFor, allFrameLayouts, makeFrameLayout,
+  clampLiveitemToFrame
+} from "../docs/frame-model.mjs";
 
 test("native PS Vita card and image sizes match the archived LiveArea guide", () => {
   assert.deepEqual(SCREEN, { width: 960, height: 544 });
@@ -163,4 +167,45 @@ test("frame-relative XML transforms, style-specific frame bounds, and Fit frame"
   assert.equal(a5.frameId, 7);
   const ad0 = normalizeLayout({ ...DEFAULT_LAYOUT, templateStyle: "ad0", frameId: 99 });
   assert.equal(ad0.frameId, 1);
+});
+
+test("all frame slots have distinct editable liveitems and export together", () => {
+  const active = normalizeLayout({
+    ...DEFAULT_LAYOUT, templateStyle: "a3", frameId: 1,
+    frameText: "First", frameTarget: "https://example.org/one"
+  });
+  const second = normalizeLayout({
+    ...makeFrameLayout("a3", 2), x: 565, y: 128,
+    w: 70, h: 48, buttonColor: 6,
+    frameText: "Second", frameTarget: "https://example.org/two",
+    transparentButton: true
+  });
+  const third = makeFrameLayout("a3", 3);
+  const frames = { [frameKey("a3", 1)]: active,
+    [frameKey("a3", 2)]: second, [frameKey("a3", 3)]: third };
+  assert.equal(frameKey("a3", 2), "a3:2");
+  assert.equal(allFrameLayouts(active, frames).length, 5);
+  assert.equal(frameLayoutFor("a3", 2, active, frames).buttonColor, 6);
+  assert.equal(frameLayoutFor("a3", 1, active, frames).frameText, "First");
+  assert.equal(frameLayoutFor("a3", 2, active, frames).frameText, "Second");
+  assert.equal(frameLayoutFor("a3", 3, active, frames).frameText, "");
+  const xml = generateTemplate(active, frames);
+  assert.equal((xml.match(/<frame id=/g) || []).length, 5);
+  assert.match(xml, /<frame id="frame1"[\s\S]*?frame1\.png/);
+  assert.match(xml, /<frame id="frame2"[\s\S]*?frame2\.png/);
+  assert.match(xml, /<frame id="frame5"[\s\S]*?frame5\.png/);
+  assert.match(xml, /<target>https:\/\/example.org\/one<\/target>/);
+  assert.match(xml, /<target>https:\/\/example.org\/two<\/target>/);
+  assert.ok(xml.indexOf("First") < xml.indexOf("Second"));
+});
+
+test("drag/resize editing clamps the liveitem inside its fixed frame", () => {
+  const first = makeFrameLayout("a3", 1);
+  const moved = clampLiveitemToFrame({ ...first, x: 999, y: 999 });
+  const clipped = previewFrames(moved)[0];
+  assert.ok(buttonOnScreen(moved).x + moved.w <= clipped.x + clipped.w);
+  assert.ok(buttonOnScreen(moved).y + moved.h <= clipped.y + clipped.h);
+  const bigger = clampLiveitemToFrame({ ...first, w: 840, h: 450, x: 0, y: 0 });
+  assert.ok(bigger.w <= clipped.w);
+  assert.ok(bigger.h <= clipped.h);
 });

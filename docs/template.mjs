@@ -1,5 +1,6 @@
-import { normalizeLayout } from "./geometry.mjs?v=1.22";
-import { frameRelativeOffsets } from "./template-preview.mjs?v=1.22";
+import { normalizeLayout } from "./geometry.mjs?v=1.23";
+import { frameRelativeOffsets } from "./template-preview.mjs?v=1.23";
+import { allFrameLayouts } from "./frame-model.mjs?v=1.23";
 
 function escapeXml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -15,9 +16,8 @@ function escapeXml(value) {
  * entire card. The centers and dimensions are sourced from the PS Vita
  * firmware's RCOF layout hints.
  */
-export function generateTemplate(layoutInput) {
+export function generateTemplate(layoutInput, frameLayouts = {}) {
   const layout = normalizeLayout(layoutInput);
-  const { x, y } = frameRelativeOffsets(layout);
   const xml = [
     '<?xml version="1.0" encoding="utf-8"?>',
     `<livearea style="${layout.templateStyle}" format-ver="01.00" content-rev="1">`,
@@ -26,24 +26,30 @@ export function generateTemplate(layoutInput) {
     "  </livearea-background>",
     "  <gate>",
     "    <startup-image>startup.png</startup-image>",
-    "  </gate>",
-    `  <frame id="frame${layout.frameId}" multi="o" autoflip="${layout.autoFlip ? 1 : 0}" rev="1">`,
-    '    <liveitem default="on">'
+    "  </gate>"
   ];
-  if (layout.frameLang) xml.push(`      <lang>${layout.frameLang}</lang>`);
-  if (layout.ageLimit > 0) xml.push(`      <age-limit>${layout.ageLimit}</age-limit>`);
-  if (layout.vitaOnly) xml.push("      <model>vita</model>");
-  xml.push(
-    `      <image align="center" valign="center" origin="frame" width="${layout.w}" height="${layout.h}" x="${x}" y="${y}">button.png</image>`
-  );
-  if (layout.frameTarget.trim()) xml.push(`      <target>${escapeXml(layout.frameTarget.trim())}</target>`);
-  if (layout.frameText.trim()) {
+  for (const item of allFrameLayouts(layout, frameLayouts)) {
+    const { x, y } = frameRelativeOffsets(item);
+    xml.push(
+      `  <frame id="frame${item.frameId}" multi="o" autoflip="${item.autoFlip ? 1 : 0}" rev="1">`,
+      '    <liveitem default="on">'
+    );
+    if (item.frameLang) xml.push(`      <lang>${item.frameLang}</lang>`);
+    if (item.ageLimit > 0) xml.push(`      <age-limit>${item.ageLimit}</age-limit>`);
+    if (item.vitaOnly) xml.push("      <model>vita</model>");
+    xml.push(
+      `      <image align="center" valign="center" origin="frame" width="${item.w}" height="${item.h}" x="${x}" y="${y}">frame${item.frameId}.png</image>`
+    );
+    if (item.frameTarget.trim()) xml.push(`      <target>${escapeXml(item.frameTarget.trim())}</target>`);
+    if (item.frameText.trim()) {
     xml.push(
       '      <text align="center" valign="bottom">',
-      `        <str size="22" color="#ffffff" bold="on">${escapeXml(layout.frameText)}</str>`,
+      `        <str size="22" color="#ffffff" bold="on">${escapeXml(item.frameText)}</str>`,
       "      </text>"
     );
+    }
+    xml.push("    </liveitem>", "  </frame>");
   }
-  xml.push("    </liveitem>", "  </frame>", "</livearea>", "");
+  xml.push("</livearea>", "");
   return xml.join("\n");
 }

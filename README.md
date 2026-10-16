@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — v1.22, RCO-based template preview.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — v1.23, multi-frame liveitems and RCO-based preview.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -17,7 +17,7 @@ LiveArea Designer helps homebrew authors prototype the images and layout of a PS
 - Choose one LiveArea style and frame, with optional target URI, text, language restriction, age limit, Vita-only model and autoflip (see notes below).
 - Save **template.xml** and an accompanying export of **8-bit indexed PNG assets** (up to 225 palette entries including a transparent slot).
 - Add optional **manual pages**, packaged in numerical order starting at `sce_sys/manual/001.png`.
-- **Preview Template** draws the firmware's real, fixed layout slots for **19 styles**. Every frame is visible; its slot dimensions, native position and the gate center come from the PS Vita RCOF `layout_hint` records. Continue moving or resizing the liveitem while previewing; XML uses the selected frame's coordinates.
+- **Preview Template** draws the firmware's real, fixed layout slots for **19 styles**. Every frame is visible; each can hold its **own PNG/JPG, coordinates, dimensions, colors, text and target**. Preview displays each liveitem directly within its slot without adding an unrelated global movable rectangle. The slot itself cannot move, but its liveitem can move/resize within it.
 
 The preview uses **actual slot geometry**, but is **not** a pixel-perfect emulation of Sony's rendered LiveArea: system graphics, clipping, animations and reserved elements are not fully simulated. Moving the custom frame image does not move the actual startup gate. Test and adjust the exported XML on a real PS Vita.
 
@@ -27,9 +27,9 @@ The preview uses **actual slot geometry**, but is **not** a pixel-perfect emulat
 
 Everything runs in your browser; images never leave your computer. Choose PNG/JPG assets through the normal file picker or drag-and-drop. Layout settings use localStorage, images use IndexedDB. Supported on modern desktop and mobile browsers; the Vita's built-in browser is not a target.
 
-**Template preview:** click **Preview Template** above the canvas (or press **P**) to switch between the freeform editor and the RCO-based layout. Changing `Layout Style` now changes the actual visual arrangement and count of frames (e.g. `a1` has 3 slots, `a3` has 5 and `a5` has 7). Click any visible frame to select it, then drag/resize the liveitem or press **Fit image to selected frame** to center it and shrink it if needed. The selected frame is outlined in gold, an out-of-frame image in red. **Export PNG Preview** captures the active mode, and the preview flag and layout settings persist after refresh.
+**Template preview:** click **Preview Template** above the canvas (or press **P**) to switch between the freeform editor and the RCO-based layout. Changing `Layout Style` changes the native frame layout and count (e.g. `a1` has 3 slots, `a3` has 5 and `a5` has 7). Click a frame to edit **that frame's own liveitem**: upload PNG/JPG using **FrameN image**, adjust size and position using the editor or Geometry inputs, change frame background, text and target in the inspector. The preview renders the selected image in the appropriate slot; other configured frames remain visible at the same time. The selected native frame has a gold outline, and editing handles act only on its liveitem. **Fit image to selected frame** centers/scales it into the slot. **Export PNG Preview** captures the active mode; settings and images survive refresh.
 
-The preview reads slot position/size metadata exported from `vs0:/vsh/shell/livearea/*.rco` on a PS Vita (19 native styles). Frame center coordinates are card-relative in the editor; the XML generator subtracts the **selected frame's RCO center**, so `x` and `y` are frame-relative. Changing styles does not silently move the custom image: use **Fit image to selected frame** to reposition it intentionally. Some system-specific frames expose dynamic dimensions; those show a `DYNAMIC` marker, and automatic fitting is unavailable.
+The preview reads slot position/size metadata exported from `vs0:/vsh/shell/livearea/*.rco` on a PS Vita (19 native styles). Frame center coordinates are card-relative in the editor; XML generation subtracts **each frame's own RCO center**, so exported `x` and `y` are frame-relative. Switching styles or frame selection does not discard the other frames' settings. Some system-specific frames expose dynamic dimensions; those show a `DYNAMIC` marker, and automatic fitting is unavailable.
 
 The web app can download a standalone `template.xml` and **Export LiveArea Assets (.zip)**, which contains:
 
@@ -42,7 +42,10 @@ sce_sys/
       template.xml
       bg0.png          # 840 x 500, indexed PNG8
       startup.png      # 280 x 158, indexed PNG8 with transparency
-      button.png       # selected frame dimensions, indexed PNG8, optional transparency
+      frame1.png       # independent PNG8 for native frame1
+      frame2.png       # independent PNG8 for native frame2
+      frame3.png       # independent PNG8 for native frame3
+      ...              # up to all frame slots supported by the chosen layout
   manual/
     001.png            # optional, 960 x 544
     002.png
@@ -50,7 +53,7 @@ sce_sys/
 
 A gate is fixed by the chosen LiveArea style. For example, `a1` centers the startup image; `psmobile` places it to the right. Other styles listed in the tutorial include system-specific layouts whose additional built-in functionality may not work for third-party homebrew.
 
-The web app exports a single custom liveitem in the selected frame. A frame can link to a website or supported Vita URI using the `target` field. If you leave the default `https://example.com`, replace that URL before publishing your VPK.
+The web app exports a liveitem for **every frame in the selected style**, together with an individual PNG8. Each frame can have a different link to a website or supported Vita URI, text, dimensions and transparent/preset-color background. Existing pre-v1.23 projects retain their original button artwork in the previously active frame.
 
 PNG assets use a quantized indexed palette. Colors are approximated and alpha is binary (fully transparent or opaque) rather than full 8-bit per-pixel opacity. Optional `icon0.png` and `pic0.png` are exported only after an image is selected.
 
@@ -62,8 +65,9 @@ Install the `LIVAREA01.vpk` from [Releases](https://github.com/robin994/LiveArea
 
 | Input | Action |
 | --- | --- |
-| Front touch / drag | Move the frame image |
-| Front touch / yellow grip | Resize |
+| Front touch on frame slot | Select that frame's independent liveitem |
+| Front touch / drag on selected image | Move liveitem content within the selected fixed native frame |
+| Front touch / yellow grip | Resize the selected frame's liveitem only |
 | Triangle | Toggle Move / Resize |
 | D-pad | Move or resize by 1 pixel |
 | Hold R + D-pad | Change by 10 pixels |
@@ -81,7 +85,7 @@ Install the `LIVAREA01.vpk` from [Releases](https://github.com/robin994/LiveArea
 | XML + Assets > Select Manual Folder | Browse to a directory; press **Square** to use it |
 | Circle | Back / save / exit |
 
-In the XML + Assets tab, select gate, icon0 and pic0 images, LiveArea style, frame, aspect-lock and transparency options. The persisted preview flag is `preview_template=1` when active. Frame link, text, language, age, Vita-only and autoflip are loaded/saved in the editable `settings.ini` keys:
+In **XML + Assets**, select style and frame; then switch to the **Colors / Images** tab and load the PNG/JPG for that specific frame. Returning to any other frame restores its image, geometry and background settings. The persisted preview flag is `preview_template=1` when active. For text, target URI, language and restrictions, the native app currently uses editable `settings.ini` keys, with a separate entry for every frame:
 
 ```ini
 frame_target=https://example.com
@@ -91,6 +95,12 @@ age_limit=0
 vita_only=0
 autoflip=0
 preview_template=1
+frame.0.1.image=ux0:/data/example-frame1.png
+frame.0.1.text=Frame One
+frame.0.1.target=https://example.org/one
+frame.0.2.image=ux0:/data/example-frame2.png
+frame.0.2.text=Frame Two
+frame.0.2.target=https://example.org/two
 ```
 
 **Native export destination:**
@@ -99,7 +109,9 @@ preview_template=1
 ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/template.xml
 ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/bg0.png
 ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/startup.png
-ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/button.png
+ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/frame1.png
+ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/frame2.png
+ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/frame3.png
 ```
 
 Optional `icon0.png`, `pic0.png` and `manual/001.png...` are saved alongside this folder tree. The native app does **not** change installed apps or the Vita's system LiveArea: copy the exported assets into your homebrew project, rebuild its VPK and install or refresh its LiveArea through normal developer workflows.
@@ -118,7 +130,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (v1.22). RCO geometry is verified against the user's own Vita firmware, but the rendered preview and newly generated XML/PNG8 assets still require end-to-end hardware testing.
+Output: `build/LIVAREA01.vpk` (v1.23). RCO geometry is verified against the user's own Vita firmware, but the rendered multi-frame preview and newly generated XML/PNG8 assets still require end-to-end hardware testing.
 
 Tests:
 
@@ -129,7 +141,7 @@ mkdir -p build/host-test
 clang -std=c99 -Wall -Wextra -Werror -Isrc src/exporter_xml.c src/template_slots.c tests/exporter_xml_smoke.c -o build/host-test/exporter_xml_smoke
 build/host-test/exporter_xml_smoke
 clang -std=c99 -Wall -Wextra -Werror -Itests/mocks -Isrc src/assets.c tests/assets_smoke.c -o build/host-test/assets_smoke
-build/host-test/assets_smoke
+(cd build/host-test && ./assets_smoke)
 clang -std=c99 -Wall -Wextra -Werror -Isrc src/template_preview.c src/template_slots.c tests/template_preview_smoke.c -o build/host-test/template_preview_smoke
 build/host-test/template_preview_smoke
 ```
@@ -154,7 +166,7 @@ This generates `docs/template-slots.mjs` and `src/template_slots.c/.h` from the 
 ## Roadmap / limitations
 
 - Refine native LiveArea clipping, shell artwork, animations and dynamic-size frame behavior beyond the current RCO geometry.
-- Support multiple independently editable liveitems and language variants; a single liveitem with `autoflip` has no meaningful automatic rotation on its own.
+- Support multiple language-specific liveitems **within an individual frame** (currently one liveitem per frame) and meaningful multi-liveitem autoflip behavior.
 - Add on-device text/target editing rather than requiring direct edits to `settings.ini`.
 - Validate indexed PNGs and installed XML on real hardware and update compatibility notes.
 

@@ -1,4 +1,5 @@
 #include "exporter.h"
+#include "template_slots.h"
 
 #include <SDL.h>
 #include <SDL_image.h>
@@ -181,10 +182,17 @@ bool lad_export_bundle(const DesignerConfig *cfg, char *error, size_t size) {
         set_error(error, size, "STARTUP.PNG EXPORT FAILED"); return false;
     }
 
-    snprintf(filename, sizeof(filename), "%s/button.png", CONTENTS_DIR);
-    if (!export_picture(cfg->button_image, filename, cfg->w, cfg->h,
-                        palette[cfg->button_color], cfg->transparent_button != 0)) {
-        set_error(error, size, "BUTTON.PNG EXPORT FAILED"); return false;
+    const int total = lad_template_frame_count(cfg->template_style);
+    for (int frame = 1; frame <= total; ++frame) {
+        DesignerFrame item;
+        lad_resolve_frame(cfg, frame, &item);
+        snprintf(filename, sizeof(filename), "%s/frame%d.png", CONTENTS_DIR, frame);
+        const int color = item.button_color >= 0 && item.button_color < LAD_PALETTE_COUNT
+            ? item.button_color : 1;
+        if (!export_picture(item.image, filename, item.w, item.h,
+                            palette[color], item.transparent_button != 0)) {
+            set_error(error, size, "FRAME PNG EXPORT FAILED"); return false;
+        }
     }
 
     if (cfg->icon_image[0]) {

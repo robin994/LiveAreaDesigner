@@ -35,6 +35,7 @@ typedef struct {
     SDL_GameController *pad;
     SDL_Texture *card_texture;
     SDL_Texture *button_texture;
+    SDL_Texture *frame_previews[LAD_MAX_FRAMES];
     SDL_Texture *gate_texture;
     Font font;
     DesignerConfig cfg;
@@ -80,6 +81,8 @@ static const SDL_Color GOLD = {255, 222, 79, 255};
 static int clampi(int v, int lo, int hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
+static bool load_texture(App *a, const char *path, SDL_Texture **out);
+static void reload_frame_previews(App *a);
 static int roundi(float x) { return (int)(x + (x >= 0.0f ? 0.5f : -0.5f)); }
 static void constrain_size(App *a, Rect origin, int dw, int dh) {
     const int max_w = CARD_W - origin.x;
@@ -136,25 +139,48 @@ static void set_status(App *a, const char *message) {
 }
 static void toggle_template_preview(App *a) {
     a->cfg.preview_template = !a->cfg.preview_template;
+    reload_frame_previews(a);
     a->dirty = true;
     set_status(a, a->cfg.preview_template ?
                "TEMPLATE PREVIEW ON - NATIVE RCO FRAME GEOMETRY" :
                "TEMPLATE PREVIEW OFF");
 }
-static void cycle_template_style(App *a) {
-    a->cfg.template_style = (a->cfg.template_style + 1) % LAD_STYLE_COUNT;
-    a->cfg.frame_id = clampi(a->cfg.frame_id, 1,
-                             lad_template_frame_count(a->cfg.template_style));
+static void select_frame(App *a, int style, int id) {
+    if (style < 0 || style >= LAD_STYLE_COUNT) style = 0;
+    id = clampi(id, 1, lad_template_frame_count(style));
+    if (style == a->cfg.template_style && id == a->cfg.frame_id) return;
+    designer_store_active_frame(&a->cfg);
+    const LadTemplateSlot *slot = lad_template_frame(style, id);
+    DesignerFrame fallback;
+    memset(&fallback, 0, sizeof(fallback));
+    fallback.initialized = 1;
+    const int width = slot && slot->width >= MIN_SIZE ? slot->width : 120;
+    const int height = slot && slot->height >= MIN_SIZE ? slot->height : 80;
+    fallback.w = width < 286 ? width : 286;
+    fallback.h = height < 168 ? height : 168;
+    fallback.x = 420 + (slot ? slot->center_x : 0) - fallback.w / 2;
+    fallback.y = 250 - (slot ? slot->center_y : 0) - fallback.h / 2;
+    fallback.aspect_width = fallback.w;
+    fallback.aspect_height = fallback.h;
+    fallback.button_color = 1;
+    designer_load_active_frame(&a->cfg, style, id, &fallback);
+    a->cfg.x = clampi(a->cfg.x, 0, CARD_W - a->cfg.w);
+    a->cfg.y = clampi(a->cfg.y, SAFE_TOP, CARD_H - a->cfg.h);
+    load_texture(a, a->cfg.button_image, &a->button_texture);
+    reload_frame_previews(a);
     a->dirty = true;
+}
+static void cycle_template_style(App *a) {
+    select_frame(a, (a->cfg.template_style + 1) % LAD_STYLE_COUNT,
+                 a->cfg.frame_id);
     char status_text[96];
     snprintf(status_text, sizeof(status_text), "TEMPLATE STYLE: %s",
              lad_preview_style_name(a->cfg.template_style));
     set_status(a, status_text);
 }
 static void cycle_template_frame(App *a) {
-    a->cfg.frame_id =
-        (a->cfg.frame_id % lad_template_frame_count(a->cfg.template_style)) + 1;
-    a->dirty = true;
+    select_frame(a, a->cfg.template_style,
+                 (a->cfg.frame_id % lad_template_frame_count(a->cfg.template_style)) + 1);
     char status_text[96];
     snprintf(status_text, sizeof(status_text), "TEMPLATE FRAME: %d", a->cfg.frame_id);
     set_status(a, status_text);
@@ -184,7 +210,8 @@ static void settings_close(App *a) {
     save(a);
     a->screen = SCREEN_EDITOR;
 }
-static bool load_texture(App *a, const char *path, SDL_Texture **out) {
+static bool load_texture_limited(App *a, const char *path,
+                                 SDL_Texture **out, int max_w, int max_h) {
     if (!*path) {
         SDL_DestroyTexture(*out);
         *out = NULL;
@@ -208,6 +235,25 @@ static bool load_texture(App *a, const char *path, SDL_Texture **out) {
         set_status(a, "IMAGE MUST BE 2048PX OR SMALLER");
         return false;
     }
+    /* Keep decoded previews close to their onscreen size. A 2048x2048 PNG
+       otherwise consumes ~16MB VRAM for every single frame. */
+    if (surface->w > max_w || surface->h > max_h) {
+        const float scale_x = (float)max_w / surface->w;
+        const float scale_y = (float)max_h / surface->h;
+        const float factor = scale_x < scale_y ? scale_x : scale_y;
+        const int w = clampi(roundi(surface->w * factor), 1, max_w);
+        const int h = clampi(roundi(surface->h * factor), 1, max_h);
+        SDL_Surface *scaled = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32,
+                                                              SDL_PIXELFORMAT_RGBA32);
+        if (!scaled || SDL_BlitScaled(surface, NULL, scaled, NULL) < 0) {
+            SDL_FreeSurface(scaled);
+            SDL_FreeSurface(surface);
+            set_status(a, "FRAME IMAGE RESIZE FAILED");
+            return false;
+        }
+        SDL_FreeSurface(surface);
+        surface = scaled;
+    }
     SDL_Texture *texture = SDL_CreateTextureFromSurface(a->renderer, surface);
     SDL_FreeSurface(surface);
     if (!texture) {
@@ -218,6 +264,25 @@ static bool load_texture(App *a, const char *path, SDL_Texture **out) {
     SDL_DestroyTexture(*out);
     *out = texture;
     return true;
+}
+static bool load_texture(App *a, const char *path, SDL_Texture **out) {
+    return load_texture_limited(a, path, out, 960, 544);
+}
+static void reload_frame_previews(App *a) {
+    for (int i = 0; i < LAD_MAX_FRAMES; ++i) {
+        SDL_DestroyTexture(a->frame_previews[i]);
+        a->frame_previews[i] = NULL;
+    }
+    if (!a->cfg.preview_template) return;
+    const int count = lad_template_frame_count(a->cfg.template_style);
+    for (int id = 1; id <= count; ++id) {
+        if (id == a->cfg.frame_id) continue;
+        DesignerFrame item;
+        lad_resolve_frame(&a->cfg, id, &item);
+        if (item.image[0])
+            load_texture_limited(a, item.image, &a->frame_previews[id - 1],
+                clampi(item.w, 1, 840), clampi(item.h, 1, 500));
+    }
 }
 static void choose_image(App *a, const char *path) {
     char *chosen;
@@ -301,6 +366,18 @@ static void editor_adjust(App *a, int dx, int dy, int step) {
         a->cfg.y += dy * step;
     }
     normalize(a);
+    if (a->cfg.preview_template) {
+        const LadTemplateSlot *slot =
+            lad_template_frame(a->cfg.template_style, a->cfg.frame_id);
+        if (slot && slot->width >= MIN_SIZE && slot->height >= MIN_SIZE) {
+            if (a->cfg.w > slot->width) a->cfg.w = slot->width;
+            if (a->cfg.h > slot->height) a->cfg.h = slot->height;
+            const int left = 420 + slot->center_x - slot->width / 2;
+            const int top = 250 - slot->center_y - slot->height / 2;
+            a->cfg.x = clampi(a->cfg.x, left, left + slot->width - a->cfg.w);
+            a->cfg.y = clampi(a->cfg.y, top, top + slot->height - a->cfg.h);
+        }
+    }
     a->dirty = true;
 }
 static void fit_image_to_template_frame(App *a) {
@@ -356,10 +433,14 @@ static void settings_adjust(App *a, int delta) {
         (a->setting_row == 3 ? LAD_STYLE_COUNT :
          lad_template_frame_count(a->cfg.template_style)) : LAD_PALETTE_COUNT;
     const int start = a->settings_tab && a->setting_row == 4 ? 1 : 0;
-    *p = ((*p - start + delta + range) % range) + start;
-    if (a->settings_tab && a->setting_row == 3)
-        a->cfg.frame_id = clampi(a->cfg.frame_id, 1,
-                                 lad_template_frame_count(a->cfg.template_style));
+    const int selected = ((*p - start + delta + range) % range) + start;
+    if (a->settings_tab && a->setting_row == 3) {
+        select_frame(a, selected, a->cfg.frame_id);
+    } else if (a->settings_tab && a->setting_row == 4) {
+        select_frame(a, a->cfg.template_style, selected);
+    } else {
+        *p = selected;
+    }
     a->dirty = true;
 }
 static void settings_confirm(App *a) {
@@ -421,8 +502,7 @@ static void pointer_down(App *a, int x, int y) {
                         slot->width * card.w / CARD_W, slot->height * card.h / CARD_H
                     };
                     if (hit(x, y, bounds)) {
-                        a->cfg.frame_id = i + 1;
-                        a->dirty = true;
+                        select_frame(a, a->cfg.template_style, i + 1);
                         set_status(a, "SELECTED NATIVE RCO FRAME");
                         return;
                     }
@@ -512,8 +592,7 @@ static void pointer_down(App *a, int x, int y) {
                     slot->width, slot->height
                 };
                 if (hit(x, y, bounds)) {
-                    a->cfg.frame_id = i + 1;
-                    a->dirty = true;
+                    select_frame(a, a->cfg.template_style, i + 1);
                     set_status(a, "SELECTED NATIVE RCO FRAME");
                     return;
                 }
@@ -536,6 +615,18 @@ static void pointer_move(App *a, int x, int y) {
     } else {
         a->cfg.x = clampi(b.x + dx, 0, CARD_W - b.w);
         a->cfg.y = clampi(b.y + dy, SAFE_TOP, CARD_H - b.h);
+    }
+    if (a->cfg.preview_template) {
+        const LadTemplateSlot *slot =
+            lad_template_frame(a->cfg.template_style, a->cfg.frame_id);
+        if (slot && slot->width >= MIN_SIZE && slot->height >= MIN_SIZE) {
+            if (a->cfg.w > slot->width) a->cfg.w = slot->width;
+            if (a->cfg.h > slot->height) a->cfg.h = slot->height;
+            const int left = 420 + slot->center_x - slot->width / 2;
+            const int top = 250 - slot->center_y - slot->height / 2;
+            a->cfg.x = clampi(a->cfg.x, left, left + slot->width - a->cfg.w);
+            a->cfg.y = clampi(a->cfg.y, top, top + slot->height - a->cfg.h);
+        }
     }
     a->dirty = true;
 }
@@ -743,6 +834,56 @@ static void draw_card(App *a, Rect card, bool guides) {
     outline(r, card, (SDL_Color){224, 185, 236, 255});
     if (a->cfg.preview_template) {
         draw_template_chrome(a, card);
+        const LadTemplateLayout *layout = lad_template_layout(a->cfg.template_style);
+        const int mini = card.w < CARD_W;
+        for (int index = 0; index < layout->frame_count; ++index) {
+            const LadTemplateSlot *slot = &layout->frames[index];
+            DesignerFrame item;
+            lad_resolve_frame(&a->cfg, index + 1, &item);
+            Rect slot_bounds = template_slot_rect(card, slot);
+            if (slot->width <= 0 || slot->height <= 0) continue;
+            const Rect content = {
+                card.x + item.x * card.w / CARD_W,
+                card.y + item.y * card.h / CARD_H,
+                clampi(item.w * card.w / CARD_W, 1, card.w),
+                clampi(item.h * card.h / CARD_H, 1, card.h)
+            };
+            SDL_Texture *texture = index + 1 == a->cfg.frame_id ?
+                a->button_texture : a->frame_previews[index];
+            SDL_Rect clip = {slot_bounds.x, slot_bounds.y,
+                             slot_bounds.w, slot_bounds.h};
+            SDL_RenderSetClipRect(r, &clip);
+            if (!item.transparent_button) {
+                const int palette_index = clampi(item.button_color, 0,
+                                                  LAD_PALETTE_COUNT - 1);
+                box(r, content, palette[palette_index], texture ? 255 : 164);
+            }
+            draw_image(r, texture, content);
+            if (!texture) {
+                char placeholder[48];
+                snprintf(placeholder, sizeof(placeholder), "FRAME%d PNG/JPG",
+                         index + 1);
+                label(a, slot_bounds.x + (mini ? 2 : 12),
+                      slot_bounds.y + (mini ? 4 : 26),
+                      placeholder, 1, TEXT, mini ? 18 : 32);
+            }
+            if (item.text[0]) {
+                const int y = clampi(content.y + content.h - 20,
+                    slot_bounds.y, slot_bounds.y + slot_bounds.h - 9);
+                label(a, content.x + 7, y, item.text, 1, TEXT,
+                      mini ? 22 : 55);
+            }
+            SDL_RenderSetClipRect(r, NULL);
+            if (index + 1 == a->cfg.frame_id) {
+                outline(r, slot_bounds, GOLD);
+                outline(r, content, image_fits_selected_frame(a) ? TEXT :
+                       (SDL_Color){255, 130, 120, 255});
+                if (guides) box(r,
+                    (Rect){content.x + content.w - 9,
+                           content.y + content.h - 9, 18, 18}, GOLD, 255);
+            }
+        }
+        return; /* No global draggable button when Template Preview is ON. */
     } else if (guides) {
         int protect_h = SAFE_TOP * card.h / CARD_H;
         box(r, (Rect){card.x, card.y, card.w, protect_h},
@@ -768,25 +909,10 @@ static void draw_card(App *a, Rect card, bool guides) {
     if (!a->cfg.transparent_button)
         box(r, b, palette[a->cfg.button_color], a->button_texture ? 255 : 228);
     draw_image(r, a->button_texture, b);
-    outline(r, b, a->cfg.preview_template && !image_fits_selected_frame(a) ?
-            (SDL_Color){255, 135, 115, 255} : TEXT);
-    if (a->cfg.preview_template) {
-        const int mini = card.w < CARD_W;
-        char frame_title[60];
-        snprintf(frame_title, sizeof(frame_title), "FRAME%d / LIVEITEM", a->cfg.frame_id);
-        label(a, b.x + 4, b.y > card.y + SAFE_TOP + 14 ? b.y - (mini ? 9 : 15) : b.y + 3,
-              frame_title, 1, GOLD, 33);
-        if (a->cfg.frame_text[0]) {
-            const int text_y = clampi(b.y + b.h + 4, card.y, card.y + card.h - 10);
-            label(a, b.x + 4, text_y, a->cfg.frame_text, 1, TEXT,
-                  clampi(b.w / 6, 1, 50));
-        }
-        if (!mini) label(a, card.x + 10, card.y + card.h - 16,
-                         "NATIVE RCO FRAME GEOMETRY - SYSTEM ART ILLUSTRATIVE", 1, GOLD, 0);
-    }
+    outline(r, b, TEXT);
     if (guides) {
         box(r, (Rect){b.x + b.w - 9, b.y + b.h - 9, 18, 18}, GOLD, 255);
-        if (!a->button_texture) label(a, b.x + 12, b.y + 12, "BUTTON", 2, TEXT, 0);
+        if (!a->button_texture) label(a, b.x + 12, b.y + 12, "LIVEITEM", 2, TEXT, 0);
     }
 }
 static void draw_editor(App *a) {
@@ -907,7 +1033,9 @@ static void draw_settings(App *a) {
     action_button(a, (Rect){397, 106, 76, 35}, "CLEAR", false);
     label(a, 57, 148, file_basename(a->cfg.card_image), 1, MUTED, 66);
 
-    label(a, 57, 195, "BUTTON IMAGE", 2, TEXT, 0);
+    char frame_heading[48];
+    snprintf(frame_heading, sizeof(frame_heading), "FRAME%d IMAGE", a->cfg.frame_id);
+    label(a, 57, 195, frame_heading, 2, TEXT, 0);
     action_button(a, (Rect){284, 186, 110, 35}, "BROWSE", a->setting_row == 1);
     action_button(a, (Rect){397, 186, 76, 35}, "CLEAR", false);
     label(a, 57, 228, file_basename(a->cfg.button_image), 1, MUTED, 66);
@@ -919,7 +1047,8 @@ static void draw_settings(App *a) {
     char desc[96];
     snprintf(desc, sizeof(desc), "CARD COLOR: %s", color_names[a->cfg.card_color]);
     label(a, 57, 260, desc, 2, TEXT, 36);
-    snprintf(desc, sizeof(desc), "BUTTON COLOR: %s", color_names[a->cfg.button_color]);
+    snprintf(desc, sizeof(desc), "FRAME%d COLOR: %s",
+             a->cfg.frame_id, color_names[a->cfg.button_color]);
     label(a, 57, 345, desc, 2, TEXT, 36);
     for (int i = 0; i < LAD_PALETTE_COUNT; ++i) {
         draw_swatch(a, i, 55 + 40 * i, 282, i == a->cfg.card_color);
@@ -1067,6 +1196,7 @@ int main(int argc, char **argv) {
     if (a->cfg.card_image[0]) load_texture(a, a->cfg.card_image, &a->card_texture);
     if (a->cfg.button_image[0]) load_texture(a, a->cfg.button_image, &a->button_texture);
     if (a->cfg.gate_image[0]) load_texture(a, a->cfg.gate_image, &a->gate_texture);
+    reload_frame_previews(a);
     for (int i = 0; i < SDL_NumJoysticks(); ++i) {
         if (SDL_IsGameController(i)) { a->pad = SDL_GameControllerOpen(i); break; }
     }
@@ -1101,6 +1231,8 @@ int main(int argc, char **argv) {
     SDL_DestroyTexture(a->card_texture);
     SDL_DestroyTexture(a->button_texture);
     SDL_DestroyTexture(a->gate_texture);
+    for (int i = 0; i < LAD_MAX_FRAMES; ++i)
+        SDL_DestroyTexture(a->frame_previews[i]);
     font_free(&a->font);
     SDL_DestroyRenderer(a->renderer);
     SDL_DestroyWindow(a->window);
