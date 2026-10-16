@@ -9,6 +9,7 @@
 #define LAD_PALETTE_COUNT 10
 #define LAD_STYLE_COUNT 19
 #define LAD_MAX_FRAMES 10
+#define LAD_DEFAULT_FRAME1_TARGET "psla:eboot"
 
 /** Independent liveitem in a fixed system frame slot. */
 typedef struct {

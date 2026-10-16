@@ -3,18 +3,18 @@ import {
   editorOffsets, cardPositionFromEditorOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
-} from "./geometry.mjs?v=1.26";
-import { generateTemplate } from "./template.mjs?v=1.26";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.26";
+} from "./geometry.mjs?v=1.27";
+import { generateTemplate } from "./template.mjs?v=1.27";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.27";
 import {
   previewGate, previewFrames, previewSummary, frameRelativeOffsets,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
-} from "./template-preview.mjs?v=1.26";
+} from "./template-preview.mjs?v=1.27";
 import {
   frameKey, frameLayoutFor, allFrameLayouts, clampLiveitemToFrame
-} from "./frame-model.mjs?v=1.26";
-import { readVpk, patchVpk } from "./vpk.mjs?v=1.26";
-import { readVpkProject } from "./vpk-import.mjs?v=1.26";
+} from "./frame-model.mjs?v=1.27";
+import { readVpk, patchVpk } from "./vpk.mjs?v=1.27";
+import { readVpkProject } from "./vpk-import.mjs?v=1.27";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";

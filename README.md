@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — v1.26, configurable X/Y signs, VPK editing, optimized PNG8 and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — v1.27, automatic frame1 launch target, configurable X/Y signs, VPK editing, optimized PNG8 and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -15,6 +15,7 @@ LiveArea Designer helps homebrew authors prototype the images and layout of a PS
 - Import PNG/JPG for the card background, movable frame button, fixed startup gate, plus optional bubble icon and bootscreen.
 - Optional fallback colors (under **Advanced appearance**) and precise frame offsets.
 - Choose one LiveArea style and frame, with optional target URI, text, language restriction, age limit, Vita-only model and autoflip (see notes below).
+- New frame1 liveitems default to the PS Vita executable target `psla:eboot`. Other frames keep their own independent targets, and existing custom targets are preserved.
 - Save **template.xml** and an accompanying export of **8-bit indexed PNG assets** (up to 225 palette entries including a transparent slot).
 - Add optional **manual pages**, packaged in numerical order starting at `sce_sys/manual/001.png`.
 - **Preview Template** draws the firmware's real, fixed layout slots for **19 styles**. Every frame is visible; each can hold its **own PNG/JPG, coordinates, dimensions, colors, text and target**. Preview displays each liveitem directly within its slot without adding an unrelated global movable rectangle. The slot itself cannot move, but its liveitem can move/resize within it.
@@ -74,6 +75,8 @@ sce_sys/
 A gate is fixed by the chosen LiveArea style. For example, `a1` centers the startup image; `psmobile` places it to the right. Other styles listed in the tutorial include system-specific layouts whose additional built-in functionality may not work for third-party homebrew.
 
 The web app exports a liveitem for **every frame in the selected style**, together with an individual PNG8. Each frame can have a different link to a website or supported Vita URI, text, dimensions and transparent/preset-color background. Existing pre-v1.23 projects retain their original button artwork in the previously active frame.
+
+**Startup link:** newly created **frame1** defaults to `<target>psla:eboot</target>`, so its button launches the homebrew's executable. You can replace it with any supported Vita URI or URL, or clear it; existing imported VPK targets and saved frame1 customizations are not changed.
 
 PNG assets use a quantized indexed palette. Colors are approximated and alpha is binary (fully transparent or opaque) rather than full 8-bit per-pixel opacity. Optional `icon0.png` and `pic0.png` are exported only after an image is selected.
 
@@ -156,7 +159,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (v1.26). RCO geometry is verified against the user's own Vita firmware, but the VPK editing workflow and newly exported XML/PNG8 assets still require end-to-end hardware testing.
+Output: `build/LIVAREA01.vpk` (v1.27). RCO geometry is verified against the user's own Vita firmware, but the VPK editing workflow and newly exported XML/PNG8 assets still require end-to-end hardware testing.
 
 Tests:
 

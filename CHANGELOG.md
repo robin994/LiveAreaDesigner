@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.27 - 2026-10-16 (frame1 startup target)
+
+- New, previously unconfigured **frame1** liveitems now default to `psla:eboot` in every supported layout style.
+- The web editor displays `psla:eboot` when frame1 is first selected; the same value is used in the default exported `template.xml` and the PS Vita homebrew frame-selection fallback.
+- Explicitly saved targets (including empty targets and custom URLs) and imported VPK frame settings are not overwritten. The other frames' defaults are unchanged.
+- Added web/native regression tests for the generated template and preservation of customized frame1 targets.
+
 ## v1.26 - 2026-10-16 (editor coordinate sign preferences)
 
 - Added independent **Invert X** and **Invert Y** controls to the web editor, under **Geometry > Coordinate signs**, and to the Vita app's **Template + VPK** settings.

@@ -53,6 +53,10 @@ int main(void) {
     assert(strstr(xml, "frame3.png") != NULL);
     assert(strstr(xml, "button.png") == NULL);
     assert(strstr(xml, "<frame id=\"frame1\"") != NULL);
+    assert(strstr(xml, "<target>psla:eboot</target>") != NULL);
+    assert(strstr(strstr(xml, "<frame id=\"frame1\""),
+                  "<target>psla:eboot</target>") <
+           strstr(xml, "<frame id=\"frame2\""));
     assert(strstr(xml, "<frame id=\"frame2\"") != NULL);
     assert(strstr(xml, "https://example.org?a=1&amp;b=&lt;x&gt;") != NULL);
     assert(strstr(xml, "A &lt;B&gt; &amp; &quot;C&quot;") != NULL);
@@ -91,6 +95,7 @@ int main(void) {
     fclose(file);
     assert(strstr(xml, "FIRST FRAME") != NULL);
     assert(strstr(xml, "https://example.org/first?a=1&amp;b=2") != NULL);
+    assert(strstr(xml, "<target>psla:eboot</target>") == NULL);
     assert(strstr(xml, "width=\"132\" height=\"75\"") != NULL);
     assert(strstr(xml, "width=\"286\" height=\"168\"") != NULL);
     puts("Native template.xml smoke tests passed");

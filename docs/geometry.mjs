@@ -1,10 +1,11 @@
-import { frameCount } from "./template-slots.mjs?v=1.26";
+import { frameCount } from "./template-slots.mjs?v=1.27";
 
 export const SCREEN = Object.freeze({ width: 960, height: 544 });
 export const CARD = Object.freeze({ x: 60, y: 44, width: 840, height: 500 });
 export const MIN_BUTTON_SIZE = 24;
 // The first 44 card pixels are occupied by native update/manual action controls.
 export const RESERVED_TOP = 44;
+export const DEFAULT_FRAME1_TARGET = "psla:eboot";
 export const TEMPLATE_STYLES = Object.freeze([
   "a1", "a2", "a3", "a4", "a5", "ad0", "ad1", "ad2", "ad3", "ad4",
   "browser", "content_manager", "kids", "music", "nsx1", "ps1emu",

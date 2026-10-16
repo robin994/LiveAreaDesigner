@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  SCREEN, CARD, RESERVED_TOP, PALETTE, DEFAULT_LAYOUT, normalizeLayout,
+  SCREEN, CARD, RESERVED_TOP, PALETTE, DEFAULT_LAYOUT, DEFAULT_FRAME1_TARGET, normalizeLayout,
   offsets, centeredOffsets, editorOffsets, cardPositionFromCenteredOffsets,
   cardPositionFromEditorOffsets, buttonOnScreen,
   toCanvasPoint, hitTest, dragLayout, stepLayout
@@ -140,6 +140,31 @@ test("template XML uses frame-relative offsets and escapes content", () => {
   assert.match(xml, /<str size="22" color="#ffffff" bold="on">A &lt;B&gt; &amp; &quot;C&quot;<\/str>/);
   assert.match(xml, /<model>vita<\/model>/);
   assert.match(xml, /<lang>en<\/lang>/);
+});
+
+test("new frame1 liveitems launch psla:eboot by default without overriding existing targets", () => {
+  assert.equal(DEFAULT_FRAME1_TARGET, "psla:eboot");
+  for (const style of ["a1", "a3", "a5", "psmobile"]) {
+    const layout = { ...DEFAULT_LAYOUT, templateStyle: style };
+    assert.equal(makeFrameLayout(style, 1).frameTarget, "psla:eboot");
+    assert.equal(makeFrameLayout(style, 2).frameTarget, "");
+    assert.equal(frameLayoutFor(style, 1, layout).frameTarget, "psla:eboot");
+    const xml = generateTemplate(layout);
+    const frame1 = xml.match(/<frame id="frame1"[\s\S]*?<\/frame>/)?.[0];
+    assert.match(frame1, /<target>psla:eboot<\/target>/);
+    assert.equal((xml.match(/<target>psla:eboot<\/target>/g) || []).length, 1);
+    const personalized = { ...makeFrameLayout(style, 1),
+      frameTarget: "https://example.org/launch" };
+    assert.equal(frameLayoutFor(style, 1, layout, { [frameKey(style, 1)]: personalized })
+      .frameTarget, "https://example.org/launch");
+    assert.match(generateTemplate(layout, { [frameKey(style, 1)]: personalized }),
+      /<target>https:\/\/example\.org\/launch<\/target>/);
+    const explicitlyDisabled = { ...personalized, frameTarget: "" };
+    assert.equal(frameLayoutFor(style, 1, layout, { [frameKey(style, 1)]: explicitlyDisabled })
+      .frameTarget, "");
+    assert.doesNotMatch(generateTemplate(layout, { [frameKey(style, 1)]: explicitlyDisabled }),
+      /<target>psla:eboot<\/target>/);
+  }
 });
 
 test("ZIP builder produces correct local and central directory signatures", async () => {

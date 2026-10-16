@@ -1,5 +1,5 @@
-import { CARD, DEFAULT_LAYOUT, MIN_BUTTON_SIZE, normalizeLayout, clamp } from "./geometry.mjs?v=1.26";
-import { getRcoLayout } from "./template-slots.mjs?v=1.26";
+import { CARD, DEFAULT_LAYOUT, DEFAULT_FRAME1_TARGET, MIN_BUTTON_SIZE, normalizeLayout, clamp } from "./geometry.mjs?v=1.27";
+import { getRcoLayout } from "./template-slots.mjs?v=1.27";
 
 export function frameKey(style, frameId) {
   return `${style}:${frameId}`;
@@ -25,7 +25,8 @@ export function makeFrameLayout(style, frameId, base = DEFAULT_LAYOUT) {
     templateStyle: style, frameId,
     x: bounds.x + Math.round((bounds.w - w) / 2),
     y: bounds.y + Math.round((bounds.h - h) / 2), w, h,
-    frameTarget: "", frameText: "", frameLang: "", autoFlip: false, ageLimit: 0,
+    frameTarget: frameId === 1 ? DEFAULT_FRAME1_TARGET : "",
+    frameText: "", frameLang: "", autoFlip: false, ageLimit: 0,
     vitaOnly: false });
 }
 

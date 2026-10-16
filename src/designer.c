@@ -165,6 +165,9 @@ static void select_frame(App *a, int style, int id) {
     fallback.aspect_width = fallback.w;
     fallback.aspect_height = fallback.h;
     fallback.button_color = 1;
+    if (id == 1)
+        snprintf(fallback.target, sizeof(fallback.target), "%s",
+                 LAD_DEFAULT_FRAME1_TARGET);
     designer_load_active_frame(&a->cfg, style, id, &fallback);
     a->cfg.x = clampi(a->cfg.x, 0, CARD_W - a->cfg.w);
     a->cfg.y = clampi(a->cfg.y, SAFE_TOP, CARD_H - a->cfg.h);

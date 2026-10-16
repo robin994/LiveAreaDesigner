@@ -166,6 +166,40 @@ try {
   assert.equal(pageState.right, "278");
   console.log("PASS: desktop initialization and native dimensions");
 
+  await evaluate(`(() => {
+    const selector = document.getElementById("xml-frame");
+    selector.value = "1";
+    selector.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("xml-target").value === "psla:eboot"'),
+    "frame1 gets default native launch target");
+  await evaluate(`(() => {
+    const target = document.getElementById("xml-target");
+    target.value = "https://example.org/custom-launch";
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    const selector = document.getElementById("xml-frame");
+    selector.value = "3";
+    selector.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("xml-target").value === "https://example.com"'),
+    "frame3 retains its independent default target");
+  await evaluate(`(() => {
+    const selector = document.getElementById("xml-frame");
+    selector.value = "1";
+    selector.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("xml-target").value === "https://example.org/custom-launch"'),
+    "customized frame1 target is not replaced");
+  await evaluate(`(() => {
+    const target = document.getElementById("xml-target");
+    target.value = "psla:eboot";
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    const selector = document.getElementById("xml-frame");
+    selector.value = "3";
+    selector.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  console.log("PASS: default frame1 psla:eboot; independent, editable, persistent target");
+
   const originalXml = await evaluate(`(async () => {
     const { generateTemplate } = await import("./template.mjs");
     const { DEFAULT_LAYOUT } = await import("./geometry.mjs");

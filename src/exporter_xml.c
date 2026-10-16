@@ -71,6 +71,8 @@ void lad_resolve_frame(const DesignerConfig *cfg, int frame_id,
     out->button_color = cfg->button_color;
     out->aspect_width = out->w;
     out->aspect_height = out->h;
+    if (frame_id == 1)
+        snprintf(out->target, sizeof(out->target), "%s", LAD_DEFAULT_FRAME1_TARGET);
 }
 
 static void xml_escape(FILE *out, const char *s) {
