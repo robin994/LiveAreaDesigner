@@ -16,6 +16,12 @@ int main(void) {
 
     assert(lad_center_x(&cfg) == -1);
     assert(lad_center_y(&cfg) == -54);
+    cfg.w = 285;
+    cfg.h = 167;
+    assert(lad_center_x(&cfg) == -1); /* Browser rounds .5 upward. */
+    assert(lad_center_y(&cfg) == -54);
+    cfg.w = 286;
+    cfg.h = 168;
     FILE *file = tmpfile();
     assert(file);
     assert(lad_write_template(file, &cfg));
@@ -27,7 +33,7 @@ int main(void) {
     assert(strstr(xml, "<livearea style=\"a1\" format-ver=\"01.00\"") != NULL);
     assert(strstr(xml, "<image>bg0.png</image>") != NULL);
     assert(strstr(xml, "<startup-image>startup.png</startup-image>") != NULL);
-    assert(strstr(xml, "width=\"286\" height=\"168\" x=\"-1\" y=\"-54\"") != NULL);
+    assert(strstr(xml, "width=\"286\" height=\"168\" x=\"-1\" y=\"-225\"") != NULL);
     assert(strstr(xml, "https://example.org?a=1&amp;b=&lt;x&gt;") != NULL);
     assert(strstr(xml, "A &lt;B&gt; &amp; &quot;C&quot;") != NULL);
     assert(strstr(xml, "<model>vita</model>") != NULL);
@@ -42,6 +48,7 @@ int main(void) {
     fclose(file);
     assert(strstr(xml, "style=\"psmobile\"") != NULL);
     assert(strstr(xml, "id=\"frame2\"") != NULL);
+    assert(strstr(xml, "width=\"286\" height=\"168\" x=\"162\" y=\"-109\"") != NULL);
     puts("Native template.xml smoke tests passed");
     return 0;
 }

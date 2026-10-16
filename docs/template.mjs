@@ -1,4 +1,5 @@
-import { centeredOffsets, normalizeLayout } from "./geometry.mjs";
+import { normalizeLayout } from "./geometry.mjs?v=1.22";
+import { frameRelativeOffsets } from "./template-preview.mjs?v=1.22";
 
 function escapeXml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -10,12 +11,13 @@ function escapeXml(value) {
 /**
  * PS Vita's gate image belongs to a fixed layout-specific position.
  * A separately positioned image goes into a fixed LiveArea frame.
- * Frame coordinates are relative to that frame, NOT to the entire card;
- * whole-card centered positions in this editor are design estimates.
+ * Frame coordinates are relative to the selected frame's center, NOT the
+ * entire card. The centers and dimensions are sourced from the PS Vita
+ * firmware's RCOF layout hints.
  */
 export function generateTemplate(layoutInput) {
   const layout = normalizeLayout(layoutInput);
-  const { x, y } = centeredOffsets(layout);
+  const { x, y } = frameRelativeOffsets(layout);
   const xml = [
     '<?xml version="1.0" encoding="utf-8"?>',
     `<livearea style="${layout.templateStyle}" format-ver="01.00" content-rev="1">`,

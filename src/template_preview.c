@@ -1,4 +1,5 @@
 #include "template_preview.h"
+#include "template_slots.h"
 
 static const char *const STYLES[] = {
     "A1", "A2", "A3", "A4", "A5", "AD0", "AD1", "AD2", "AD3", "AD4",
@@ -13,18 +14,13 @@ const char *lad_preview_style_name(int style) {
 }
 
 LadPreviewGate lad_preview_gate(int template_style) {
+    const LadTemplateLayout *layout = lad_template_layout(template_style);
     LadPreviewGate gate;
     gate.w = 280;
     gate.h = 158;
-    gate.y = (500 - gate.h) / 2;
-    gate.x = (840 - gate.w) / 2;
-    gate.known_alignment = 0;
-    if (template_style == 0) {
-        gate.known_alignment = 1; /* a1: centered. */
-    } else if (template_style == 16) {
-        gate.x = 840 - gate.w - 24;
-        gate.known_alignment = 1; /* psmobile: right aligned. */
-    }
-    /* Exact pixel offsets are illustrative, never read from system resources. */
+    gate.x = 420 + layout->gate_center_x - gate.w / 2;
+    gate.y = 250 - layout->gate_center_y - gate.h / 2;
+    gate.known_alignment = layout->has_gate;
+    /* Actual gate center from firmware RCOF layout hints. */
     return gate;
 }

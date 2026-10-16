@@ -1,5 +1,5 @@
-import { CARD, PALETTE } from "./geometry.mjs";
-import { generateTemplate } from "./template.mjs";
+import { CARD, PALETTE } from "./geometry.mjs?v=1.22";
+import { generateTemplate } from "./template.mjs?v=1.22";
 
 const encoder = new TextEncoder();
 const SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);

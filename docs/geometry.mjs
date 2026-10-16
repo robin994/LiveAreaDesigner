@@ -1,3 +1,5 @@
+import { frameCount } from "./template-slots.mjs?v=1.22";
+
 export const SCREEN = Object.freeze({ width: 960, height: 544 });
 export const CARD = Object.freeze({ x: 60, y: 44, width: 840, height: 500 });
 export const MIN_BUTTON_SIZE = 24;
@@ -73,7 +75,7 @@ export function normalizeLayout(input = {}) {
     aspectRatio,
     transparentButton: input.transparentButton === true,
     templateStyle,
-    frameId: clamp(numberOr(input.frameId, DEFAULT_LAYOUT.frameId), 1, 3),
+    frameId: clamp(numberOr(input.frameId, DEFAULT_LAYOUT.frameId), 1, frameCount(templateStyle)),
     frameTarget: typeof input.frameTarget === "string" ? input.frameTarget.slice(0, 240) : DEFAULT_LAYOUT.frameTarget,
     frameText: typeof input.frameText === "string" ? input.frameText.slice(0, 160) : "",
     frameLang,

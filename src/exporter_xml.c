@@ -1,4 +1,5 @@
 #include "exporter.h"
+#include "template_slots.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -11,11 +12,12 @@ static const char *styles[] = {
 
 int lad_center_x(const DesignerConfig *config) {
     /* Card center: X=0 at 420 px, left negative and right positive. */
-    return config->x + config->w / 2 - 420;
+    /* Match browser Math.round() for odd positive image dimensions. */
+    return config->x + (config->w + 1) / 2 - 420;
 }
 int lad_center_y(const DesignerConfig *config) {
     /* Card center: Y=0 at 250 px, up negative and down positive. */
-    return config->y + config->h / 2 - 250;
+    return config->y + (config->h + 1) / 2 - 250;
 }
 
 static void xml_escape(FILE *out, const char *s) {
@@ -36,7 +38,11 @@ bool lad_write_template(FILE *out, const DesignerConfig *c) {
     int style = c->template_style;
     if (style < 0 || style >= LAD_STYLE_COUNT) style = 0;
     int frame = c->frame_id;
-    if (frame < 1 || frame > 3) frame = 3;
+    const int max_frame = lad_template_frame_count(style);
+    if (frame < 1 || frame > max_frame) frame = max_frame;
+    int xml_x, xml_y;
+    lad_template_frame_offsets(style, frame, lad_center_x(c), lad_center_y(c),
+                               &xml_x, &xml_y);
     fprintf(out,
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
         "<livearea style=\"%s\" format-ver=\"01.00\" content-rev=\"1\">\n"
@@ -62,7 +68,7 @@ bool lad_write_template(FILE *out, const DesignerConfig *c) {
     fprintf(out,
         "      <image align=\"center\" valign=\"center\" origin=\"frame\" "
         "width=\"%d\" height=\"%d\" x=\"%d\" y=\"%d\">button.png</image>\n",
-        c->w, c->h, lad_center_x(c), lad_center_y(c));
+        c->w, c->h, xml_x, xml_y);
     if (c->frame_target[0]) {
         fputs("      <target>", out);
         xml_escape(out, c->frame_target);

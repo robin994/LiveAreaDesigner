@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css">
-  <script type="module" src="./app.js"></script>
+  <link rel="stylesheet" href="./styles.css?v=1.22">
+  <script type="module" src="./app.js?v=1.22"></script>
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -23,11 +23,11 @@
       <span class="brand-name">LIVEAREA <strong>DESIGNER</strong><small>PS VITA DESIGN TOOL</small></span>
     </a>
     <div class="header-right">
-      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.21</span>
+      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.22</span>
       <a class="header-link" href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">
         GitHub <span aria-hidden="true">↗</span>
       </a>
-      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.21" target="_blank" rel="noopener noreferrer">
+      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.22" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 17v3h16v-3"/></svg>
         Download VPK
       </a>
@@ -95,9 +95,13 @@
             <span class="keyboard-tip">ARROWS <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> <small>SHIFT × 10</small></span>
           </div>
           <div id="template-preview-details" class="template-preview-details" hidden>
-            <span class="template-preview-badge">ILLUSTRATIVE</span>
+            <span class="template-preview-badge">FIRMWARE GEOMETRY</span>
             <span id="template-preview-summary" aria-live="polite">Style a1 · frame3 · centered gate</span>
-            <p>The fixed gate and frame slots are defined by the Vita system. Their exact positions may differ; move and resize the liveitem in the preview to edit the exported template.xml.</p>
+            <div class="template-preview-actions">
+              <span id="template-frame-offsets" aria-live="polite">Frame offsets: X 0 · Y 0</span>
+              <button type="button" id="fit-template-frame">Fit image to selected frame</button>
+            </div>
+            <p id="template-fit-warning">Frame outlines and centers come from PS Vita firmware RCO layouts. Select a frame in the canvas, then drag/resize or fit the image. System decorations remain illustrative.</p>
           </div>
         </div>
 
@@ -242,7 +246,7 @@
           </div>
           <label class="editor-check"><input id="xml-vita-only" type="checkbox"><span>Restrict this liveitem to PS Vita <small>Include model=vita</small></span></label>
           <label class="editor-check"><input id="xml-autoflip" type="checkbox"><span>Frame autoflip <small>Useful when adding multiple liveitems manually</small></span></label>
-          <p class="section-note">The gate and frame positions are fixed by the selected system layout. Frame X/Y values in the generated XML are <strong>frame-relative estimates</strong>; test them on a real PS Vita. Export includes palette-indexed PNG assets.</p>
+          <p class="section-note">Frame slots and gate centers are measured from the Vita firmware's layout hints. The editor keeps card-centered X/Y for positioning, and exports <strong>frame-relative X/Y</strong> in template.xml. System graphics are illustrative. Test the exported result on hardware.</p>
           <button id="download-package-side" type="button" class="asset-upload export-side">Export template.xml + Vita PNGs (.zip)</button>
         </section>
         <div class="storage-note">
@@ -254,7 +258,7 @@
 
     <div class="page-footnote">
       <span><span class="footnote-marker"></span> AN OPEN-SOURCE PROJECT <strong>by robin994</strong></span>
-      <span>This is a visual simulator; it does not modify the system LiveArea or export XML. <a href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">Source code and MIT license ↗</a></span>
+      <span>This is a visual simulator; it exports template.xml and Vita PNG assets, but never modifies the system LiveArea. <a href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">Source code and MIT license ↗</a></span>
     </div>
   </main>
 

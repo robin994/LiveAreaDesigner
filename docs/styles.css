@@ -199,6 +199,21 @@ h1 em { font-style: normal; color: #f09edb; }
   color: #ffe4ac; font: 700 9px "Space Grotesk", sans-serif;
   border: 1px solid #b5945f; padding: 3px 6px; border-radius: 3px; margin-right: 8px;
 }
+.template-preview-actions {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: 10px;
+}
+#template-frame-offsets {
+  color: #e5e6f7; font: 600 11px "Space Grotesk", sans-serif;
+}
+#fit-template-frame {
+  min-height: 34px; border: 1px solid #9ca7ce; background: #334a66;
+  border-radius: 5px; color: white; cursor: pointer;
+  padding: 6px 12px; font: 600 11px "Space Grotesk", sans-serif;
+}
+#fit-template-frame:hover { border-color: white; background: #425c7c; }
+#fit-template-frame:disabled { opacity: .4; cursor: default; }
+#template-fit-warning.is-warning { color: #ffe09d; }
 
 .canvas-wrap { position: relative; padding: 17px; background: #091221; }
 .canvas-wrap::after {

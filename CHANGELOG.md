@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.22 - 2026-10-16 (pre-release)
+
+- Fixed the Preview Template regression where selecting `a1`–`a5` barely changed the visual layout.
+- Decoded `layout_hint` records from 19 LiveArea RCOF files read from a PS Vita. The repository includes numeric frame/gate geometry only, **not firmware files**.
+- Added generated, synchronized browser and native-C tables with the real frame slot count, centers and dimensions.
+- Every native slot is displayed in Preview Template, with its frame number, dimensions and a highlighted selection; click/tap another slot to select it.
+- Web: **Fit image to selected frame**, clipping warning, dynamically populated frame select and live display of XML frame-relative X/Y.
+- PS Vita: matching RCO-based slot rendering, SELECT/Square/L shortcuts preserved, Cross to fit the selected liveitem, and frame selection via front touch.
+- Corrected XML export for both platforms to use the chosen frame's center, not the card center; fixed native rounding for odd image dimensions.
+- Versioned browser module URLs to prevent cached 1.21 JavaScript from hiding the new layout behavior.
+- Added deterministic regeneration scripts and geometry/visual browser regressions for `a1`–`a5`.
+- System decorations are still schematic and frame clipping/XML validity on hardware require an end-to-end test.
+
 ## v1.21 - 2026-10-16 (pre-release)
 
 - Added the persistent **Preview Template** flag to the web and PS Vita editors.

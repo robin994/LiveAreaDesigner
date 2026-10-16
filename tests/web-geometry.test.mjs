@@ -6,7 +6,11 @@ import {
 } from "../docs/geometry.mjs";
 import { generateTemplate } from "../docs/template.mjs";
 import { makeZip } from "../docs/package.mjs";
-import { previewGate, previewSummary } from "../docs/template-preview.mjs";
+import {
+  previewGate, previewFrames, previewSummary, frameRelativeOffsets,
+  imageFitsSelectedFrame, fitImageToSelectedFrame
+} from "../docs/template-preview.mjs";
+import { getRcoLayout, frameCount } from "../docs/template-slots.mjs";
 
 test("native PS Vita card and image sizes match the archived LiveArea guide", () => {
   assert.deepEqual(SCREEN, { width: 960, height: 544 });
@@ -72,7 +76,7 @@ test("keyboard geometry uses selected mode and 10 pixel step", () => {
   assert.deepEqual([resized.w, resized.h], [296, 158]);
 });
 
-test("template XML contains standard gate, frame, signed center offsets and escaped fields", () => {
+test("template XML uses frame-relative offsets and escapes content", () => {
   const xml = generateTemplate({
     ...DEFAULT_LAYOUT, frameTarget: "https://example.org?a=1&b=<x>",
     frameText: 'A <B> & "C"', frameLang: "en", vitaOnly: true, ageLimit: 3
@@ -81,7 +85,7 @@ test("template XML contains standard gate, frame, signed center offsets and esca
   assert.match(xml, /<image>bg0.png<\/image>/);
   assert.match(xml, /<startup-image>startup.png<\/startup-image>/);
   assert.match(xml, /<frame id="frame3" multi="o" autoflip="0" rev="1">/);
-  assert.match(xml, /origin="frame" width="286" height="168" x="-1" y="-54"/);
+  assert.match(xml, /origin="frame" width="286" height="168" x="-1" y="-225"/);
   assert.match(xml, /https:\/\/example.org\?a=1&amp;b=&lt;x&gt;/);
   assert.match(xml, /<str size="22" color="#ffffff" bold="on">A &lt;B&gt; &amp; &quot;C&quot;<\/str>/);
   assert.match(xml, /<model>vita<\/model>/);
@@ -97,17 +101,66 @@ test("ZIP builder produces correct local and central directory signatures", asyn
   assert.throws(() => makeZip([{name:"../unsafe.xml",data:"a"}]), /Unsafe ZIP/);
 });
 
-test("template preview shows documented gate alignment without claiming exact slot coordinates", () => {
+test("RCOF firmware gate positions are distinct and mapped with Y positive upward", () => {
   const center = previewGate({ ...DEFAULT_LAYOUT, templateStyle: "a1" });
   assert.deepEqual(center, {
-    x: 340, y: 215, w: 280, h: 158, alignment: "center", estimated: true
+    x: 340, y: 183, w: 280, h: 158, centerX: 480, centerY: 262,
+    rcoX: 0, rcoY: 32, alignment: "center", estimated: false
   });
   const right = previewGate({ ...DEFAULT_LAYOUT, templateStyle: "psmobile" });
   assert.deepEqual(right, {
-    x: 596, y: 215, w: 280, h: 158, alignment: "right", estimated: true
+    x: 580, y: 199, w: 280, h: 158, centerX: 720, centerY: 278,
+    rcoX: 240, rcoY: 16, alignment: "right", estimated: false
   });
-  const unknown = previewSummary({ ...DEFAULT_LAYOUT, templateStyle: "a3", frameId: 2 });
-  assert.equal(unknown.frame, "frame2");
-  assert.equal(unknown.gateDescription, "gate location unverified");
-  assert.match(unknown.note, /Illustrative LiveArea preview/);
+  assert.equal(previewGate({ ...DEFAULT_LAYOUT, templateStyle: "ad0" }), null);
+  const summary = previewSummary({ ...DEFAULT_LAYOUT, templateStyle: "a3", frameId: 2 });
+  assert.equal(summary.frame, "frame2");
+  assert.equal(summary.frameCount, 5);
+  assert.equal(summary.frameSize, "260 × 200 px");
+  assert.equal(summary.gateDescription, "center-aligned gate");
+  assert.match(summary.note, /Native frame\/gate geometry extracted/);
+});
+
+test("RCO frame geometry varies across a1-a5, with the correct fixed slot count", () => {
+  const expected = {
+    a1: [[-290, 34, 260, 260], [290, 34, 260, 260], [0, -171, 840, 150]],
+    a2: [[-290, -46, 260, 400], [290, -46, 260, 400], [0, -146, 320, 200]],
+    a3: [[-290, 64, 260, 200], [290, 64, 260, 200], [-290, -141, 260, 210],
+      [0, -141, 320, 210], [290, -141, 260, 210]],
+    a4: [[-290, 64, 260, 200], [290, 64, 260, 200], [0, -71, 840, 70],
+      [0, -141, 840, 70], [0, -211, 840, 70]],
+    a5: [[-180, 128, 480, 68], [-180, 60, 480, 68], [-180, -8, 480, 68],
+      [-180, -76, 480, 68], [-180, -144, 480, 68], [-180, -212, 480, 68],
+      [240, -141, 360, 210]]
+  };
+  for (const [style, values] of Object.entries(expected)) {
+    const model = getRcoLayout(style);
+    assert.deepEqual(model.frames, values, style);
+    assert.equal(frameCount(style), values.length);
+    const rectangles = previewFrames({ ...DEFAULT_LAYOUT, templateStyle: style });
+    assert.deepEqual([rectangles[0].centerX, rectangles[0].centerY],
+      [480 + values[0][0], 294 - values[0][1]]);
+    assert.equal(rectangles.length, values.length);
+  }
+});
+
+test("frame-relative XML transforms, style-specific frame bounds, and Fit frame", () => {
+  const a1 = { ...DEFAULT_LAYOUT, templateStyle: "a1", frameId: 3 };
+  assert.deepEqual(frameRelativeOffsets(a1), { x: -1, y: -225 });
+  assert.deepEqual(frameRelativeOffsets({ ...a1, frameId: 1 }), { x: 289, y: -20 });
+  const a4 = { ...a1, templateStyle: "a4", frameId: 5 };
+  assert.deepEqual(frameRelativeOffsets(a4), { x: -1, y: -265 });
+  assert.equal(imageFitsSelectedFrame(a4), false);
+  const resized = fitImageToSelectedFrame(a4);
+  assert.equal(resized.frameId, 5);
+  assert.equal(resized.h, 70);
+  assert.ok(imageFitsSelectedFrame(resized));
+  const xml = generateTemplate(resized);
+  assert.match(xml, /style="a4"/);
+  assert.match(xml, /id="frame5"/);
+  assert.match(xml, /origin="frame" width="286" height="70" x="0" y="0"/);
+  const a5 = normalizeLayout({ ...DEFAULT_LAYOUT, templateStyle: "a5", frameId: 99 });
+  assert.equal(a5.frameId, 7);
+  const ad0 = normalizeLayout({ ...DEFAULT_LAYOUT, templateStyle: "ad0", frameId: 99 });
+  assert.equal(ad0.frameId, 1);
 });

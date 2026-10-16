@@ -337,9 +337,53 @@ try {
   assert.equal(await evaluate('document.getElementById("template-preview-state").textContent'), "ON");
   assert.equal(await evaluate('document.getElementById("template-preview-details").hidden'), false);
   assert.match(await evaluate('document.getElementById("template-preview-summary").textContent'),
-    /Style a2.*frame3.*unverified/);
+    /Style a2.*frame3.*320.*200.*center-aligned gate/);
   assert.notEqual(await evaluate('document.getElementById("preview").toDataURL("image/png")'),
     oldCanvas);
+
+  const samples = await evaluate(`(async () => {
+    const colors = [];
+    for (const styleName of ["a1", "a2", "a3", "a4", "a5"]) {
+      const style = document.getElementById("xml-style");
+      style.value = styleName;
+      style.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise(resolve => requestAnimationFrame(() =>
+        requestAnimationFrame(resolve)));
+      const frameOptions = document.getElementById("xml-frame").options.length;
+      const screenshot = document.getElementById("preview").toDataURL("image/png");
+      colors.push({ style: styleName, screenshot, frameOptions });
+    }
+    return colors;
+  })()`);
+  assert.deepEqual(samples.map(sample => sample.frameOptions), [3, 3, 5, 5, 7]);
+  assert.equal(new Set(samples.map(sample => sample.screenshot)).size, 5,
+    "Every a1-a5 template must show its actual different RCO slot geometry");
+  console.log("PASS: a1-a5 all render distinct firmware geometry; 3/3/5/5/7 frame selectors");
+  await evaluate(`(() => {
+    const style = document.getElementById("xml-style");
+    style.value = "a2";
+    style.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate(
+    'document.getElementById("template-preview-summary").textContent.includes("Style a2")'
+  ), "restore a2 before psmobile test");
+  await evaluate(`(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+    document.getElementById("preview").scrollIntoView({ behavior: "instant", block: "center" });
+  })()`);
+  metrics = await evaluate(`(() => {
+    const r = document.getElementById("preview").getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  })()`);
+  const frameSelection = point(metrics, 110, 240); // A2 frame1, clear of the editable button.
+  await mouse("mousePressed", frameSelection.x, frameSelection.y, 1);
+  await mouse("mouseReleased", frameSelection.x, frameSelection.y);
+  await waitFor(() => evaluate(
+    'document.getElementById("xml-frame").value === "1"'
+  ), "click-to-select native frame slot");
+  assert.match(await evaluate('document.getElementById("template-preview-summary").textContent'),
+    /Style a2.*frame1/);
+  console.log("PASS: click a real template slot to select the frame in the XML editor");
 
   const a2Canvas = await evaluate('document.getElementById("preview").toDataURL("image/png")');
   await evaluate(`(() => {
@@ -366,6 +410,10 @@ try {
     const r = buttonOnScreen(l);
     return { x: r.x, y: r.y, w: r.w, h: r.h };
   })()`);
+  await evaluate(`(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+    document.getElementById("preview").scrollIntoView({ behavior: "instant", block: "center" });
+  })()`);
   metrics = await evaluate(`(() => {
     const r = document.getElementById("preview").getBoundingClientRect();
     return { left: r.left, top: r.top, width: r.width, height: r.height };
@@ -388,7 +436,26 @@ try {
   assert.match(liveXml, /<livearea style="psmobile"/);
   assert.match(liveXml, /<frame id="frame2"/);
   assert.match(liveXml, /Preview test/);
-  assert.match(liveXml, new RegExp('x="' + (initialX + 20) + '"'));
+  const relative = await evaluate(`(async () => {
+    const { frameRelativeOffsets } = await import("./template-preview.mjs");
+    return frameRelativeOffsets(
+      JSON.parse(localStorage.getItem("livearea-designer-web-v1")).layout
+    );
+  })()`);
+  assert.match(liveXml, new RegExp('x="' + relative.x + '" y="' + relative.y + '"'));
+  await evaluate('document.getElementById("fit-template-frame").click()');
+  await waitFor(() => evaluate(
+    'document.getElementById("template-fit-warning").textContent.startsWith("Image fits")'
+  ), "fit liveitem into actual system frame");
+  const afterFit = await evaluate(`(async () => {
+    const { frameRelativeOffsets, imageFitsSelectedFrame } =
+      await import("./template-preview.mjs");
+    const layout = JSON.parse(localStorage.getItem("livearea-designer-web-v1")).layout;
+    return { fits: imageFitsSelectedFrame(layout), offset: frameRelativeOffsets(layout) };
+  })()`);
+  assert.equal(afterFit.fits, true);
+  assert.ok(Math.abs(afterFit.offset.x) <= 1, "Fit centers the image horizontally to pixel precision");
+  assert.ok(Math.abs(afterFit.offset.y) <= 1, "Fit centers the image vertically to pixel precision");
   await send("Page.reload", { ignoreCache: true });
   await waitFor(() => evaluate('document.getElementById("template-preview-state").textContent === "ON"'),
     "persisted template preview toggle");

@@ -2,10 +2,13 @@ import {
   SCREEN, CARD, RESERVED_TOP, PALETTE, DEFAULT_LAYOUT, centeredOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
-} from "./geometry.mjs";
-import { generateTemplate } from "./template.mjs";
-import { buildLiveAreaPackage } from "./package.mjs";
-import { previewGate, previewSummary } from "./template-preview.mjs";
+} from "./geometry.mjs?v=1.22";
+import { generateTemplate } from "./template.mjs?v=1.22";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.22";
+import {
+  previewGate, previewFrames, previewSummary, frameRelativeOffsets,
+  imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
+} from "./template-preview.mjs?v=1.22";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";
@@ -329,6 +332,18 @@ function updateInterface() {
   fields.h.max = String(CARD.height - layout.y);
   document.getElementById("lock-aspect").checked = layout.lockAspect;
   document.getElementById("transparent-button").checked = layout.transparentButton;
+  const frameSelector = document.getElementById("xml-frame");
+  const frameCount = previewFrames(layout).length;
+  if (frameSelector.options.length !== frameCount) {
+    const options = [];
+    for (let id = 1; id <= frameCount; id++) {
+      const option = document.createElement("option");
+      option.value = String(id);
+      option.textContent = `frame${id}`;
+      options.push(option);
+    }
+    frameSelector.replaceChildren(...options);
+  }
   for (const [id, value] of Object.entries({
     "xml-style": layout.templateStyle,
     "xml-frame": String(layout.frameId),
@@ -367,7 +382,20 @@ function updateInterface() {
   if (state.templatePreview) {
     const summary = previewSummary(layout);
     elements.templateSummary.textContent =
-      `Style ${summary.style} · ${summary.frame} · ${summary.gateDescription}`;
+      `Style ${summary.style} · ${summary.frame} / ${summary.frameCount} · ${summary.frameSize} · ${summary.gateDescription}`;
+    const relative = frameRelativeOffsets(layout);
+    document.getElementById("template-frame-offsets").textContent =
+      `XML frame offsets: X ${relative.x} px · Y ${relative.y} px`;
+    const fits = imageFitsSelectedFrame(layout);
+    const frame = selectedFrame(layout);
+    const warning = document.getElementById("template-fit-warning");
+    warning.classList.toggle("is-warning", !fits);
+    warning.textContent = frame?.dynamic ?
+      "This system frame has dynamic dimensions; automatic fitting is unavailable." :
+      fits ?
+        "Image fits inside the selected firmware frame. Click another frame to select it; drag to adjust the liveitem." :
+        "Image is outside or larger than the selected frame and may be clipped on Vita. Drag/resize it, or use Fit image to selected frame.";
+    document.getElementById("fit-template-frame").disabled = !frame || frame.dynamic;
   }
 }
 
@@ -481,81 +509,80 @@ function drawBackdrop(ctx2d) {
 
 function drawTemplateElements(ctx2d, layout) {
   const gate = previewGate(layout);
-  const frame = buttonOnScreen(layout);
+  const frames = previewFrames(layout);
   ctx2d.save();
 
-  // The Vita reserves these slots. Their alignment is documented, but their
-  // exact pixel offsets are not; this is an interactive structural preview.
+  // The slot centers and sizes are decoded from the Vita's actual RCO files.
+  // Only shell artwork remains schematic; RCO does not supply that texture.
   ctx2d.fillStyle = "#141e36ec";
   ctx2d.fillRect(CARD.x + 1, CARD.y + 1, CARD.width - 2, RESERVED_TOP - 1);
-  ctx2d.font = '600 14px "Space Grotesk", sans-serif';
+  ctx2d.font = '600 12px "Space Grotesk", sans-serif';
   ctx2d.textAlign = "left";
   ctx2d.textBaseline = "middle";
   ctx2d.fillStyle = "#e9e5fa";
-  ctx2d.fillText("LIVEAREA", CARD.x + 17, CARD.y + RESERVED_TOP / 2);
-  const buttons = [
-    { name: "UPDATE", w: 91 },
-    { name: "MANUAL", w: 94 }
-  ];
-  let right = CARD.x + CARD.width - 12;
-  for (const button of buttons) {
-    const x = right - button.w;
-    roundedBox(ctx2d, x, CARD.y + 8, button.w, 27, 6);
-    ctx2d.fillStyle = "#334663";
+  ctx2d.fillText("LIVEAREA / NATIVE RCO FRAME GEOMETRY", CARD.x + 17, CARD.y + RESERVED_TOP / 2);
+  ctx2d.textAlign = "right";
+  ctx2d.fillStyle = "#9cc4ec";
+  ctx2d.fillText(`${layout.templateStyle.toUpperCase()}  •  ${frames.length} FRAME SLOTS`,
+    CARD.x + CARD.width - 16, CARD.y + RESERVED_TOP / 2);
+
+  // All slots remain visible, including slots without XML content.
+  // The active slot is highlighted; clicking another slot selects it.
+  for (const slot of frames) {
+    const active = slot.id === layout.frameId;
+    const visual = slot.dynamic ?
+      { x: slot.centerX - 32, y: slot.centerY - 15, w: 64, h: 30 } : slot;
+    if (visual.w <= 0 || visual.h <= 0) continue;
+    ctx2d.fillStyle = active ? "#e66cce4a" : "#0c2449ad";
+    roundedBox(ctx2d, visual.x, visual.y, visual.w, visual.h, 5);
     ctx2d.fill();
-    ctx2d.strokeStyle = "#778bb0";
+    ctx2d.strokeStyle = active ? "#ffd369" : "#a9cce1e0";
+    ctx2d.lineWidth = active ? 3.5 : 1.5;
+    ctx2d.setLineDash(active ? [] : [7, 4]);
     ctx2d.stroke();
-    ctx2d.fillStyle = "#f4f2ff";
+    ctx2d.setLineDash([]);
+    const name = `FRAME${slot.id}`;
+    ctx2d.font = `700 ${visual.h < 65 ? 10 : 15}px "Space Grotesk", sans-serif`;
     ctx2d.textAlign = "center";
-    ctx2d.font = '600 11px "Space Grotesk", sans-serif';
-    ctx2d.fillText(button.name, x + button.w / 2, CARD.y + 21);
-    right = x - 9;
+    ctx2d.textBaseline = "middle";
+    ctx2d.fillStyle = active ? "#fff2bc" : "#d4eaff";
+    ctx2d.fillText(name, slot.centerX, slot.centerY - (visual.h > 60 ? 9 : 0),
+      Math.max(32, visual.w - 10));
+    if (visual.h > 60) {
+      ctx2d.font = '500 11px "Space Grotesk", sans-serif';
+      ctx2d.fillText(slot.dynamic ? "DYNAMIC" : `${slot.w} × ${slot.h}`,
+        slot.centerX, slot.centerY + 13, Math.max(30, visual.w - 12));
+    }
   }
 
-  ctx2d.fillStyle = "#12213ab5";
-  roundedBox(ctx2d, gate.x - 5, gate.y - 5, gate.w + 10, gate.h + 38, 13);
-  ctx2d.fill();
-  ctx2d.strokeStyle = "#bfd0e28f";
-  ctx2d.lineWidth = 1.5;
-  ctx2d.stroke();
-  if (state.images.gate?.image) {
-    ctx2d.drawImage(state.images.gate.image, gate.x, gate.y, gate.w, gate.h);
-  } else {
-    const grad = ctx2d.createLinearGradient(gate.x, gate.y, gate.x, gate.y + gate.h);
-    grad.addColorStop(0, "#585d87");
-    grad.addColorStop(1, "#2b314f");
-    ctx2d.fillStyle = grad;
-    roundedBox(ctx2d, gate.x, gate.y, gate.w, gate.h, 8);
+  if (gate) {
+    ctx2d.fillStyle = "#13223ce8";
+    roundedBox(ctx2d, gate.x - 5, gate.y - 5, gate.w + 10, gate.h + 38, 13);
     ctx2d.fill();
-    ctx2d.fillStyle = "#eeebff";
-    ctx2d.font = '700 18px "Space Grotesk", sans-serif';
+    ctx2d.strokeStyle = "#fff6dbd9";
+    ctx2d.lineWidth = 2;
+    ctx2d.stroke();
+    if (state.images.gate?.image) {
+      ctx2d.drawImage(state.images.gate.image, gate.x, gate.y, gate.w, gate.h);
+    } else {
+      const grad = ctx2d.createLinearGradient(gate.x, gate.y, gate.x, gate.y + gate.h);
+      grad.addColorStop(0, "#595e87");
+      grad.addColorStop(1, "#2c3452");
+      ctx2d.fillStyle = grad;
+      roundedBox(ctx2d, gate.x, gate.y, gate.w, gate.h, 8);
+      ctx2d.fill();
+      ctx2d.fillStyle = "#eeebff";
+      ctx2d.font = '700 18px "Space Grotesk", sans-serif';
+      ctx2d.textAlign = "center";
+      ctx2d.fillText("STARTUP IMAGE", gate.x + gate.w / 2, gate.y + gate.h / 2);
+    }
+    roundedBox(ctx2d, gate.x + 54, gate.y + gate.h + 3, gate.w - 108, 24, 12);
+    ctx2d.fillStyle = "#48a5ea";
+    ctx2d.fill();
+    ctx2d.fillStyle = "#fff";
     ctx2d.textAlign = "center";
-    ctx2d.fillText("STARTUP IMAGE", gate.x + gate.w / 2, gate.y + gate.h / 2);
-  }
-  roundedBox(ctx2d, gate.x + 54, gate.y + gate.h + 3, gate.w - 108, 24, 12);
-  ctx2d.fillStyle = "#48a5ea";
-  ctx2d.fill();
-  ctx2d.fillStyle = "#fff";
-  ctx2d.textAlign = "center";
-  ctx2d.font = '700 12px "Space Grotesk", sans-serif';
-  ctx2d.fillText("START", gate.x + gate.w / 2, gate.y + gate.h + 15);
-
-  // The selected liveitem remains the draggable element in either mode.
-  // Highlight overlapping content so it is clear why a system slot matters.
-  const overlaps = frame.x < gate.x + gate.w && frame.x + frame.w > gate.x &&
-    frame.y < gate.y + gate.h && frame.y + frame.h > gate.y;
-  ctx2d.fillStyle = "#091326c7";
-  roundedBox(ctx2d, CARD.x + 15, CARD.y + RESERVED_TOP + 11, 230, 24, 4);
-  ctx2d.fill();
-  ctx2d.font = '600 12px "Space Grotesk", sans-serif';
-  ctx2d.textAlign = "left";
-  ctx2d.fillStyle = "#d7f0ff";
-  ctx2d.fillText(`STYLE: ${layout.templateStyle.toUpperCase()}  |  FRAME ${layout.frameId}`,
-    CARD.x + 26, CARD.y + RESERVED_TOP + 23);
-  if (overlaps) {
-    ctx2d.fillStyle = "#ffe49f";
-    ctx2d.font = '600 12px "Space Grotesk", sans-serif';
-    ctx2d.fillText("GATE OVERLAP", CARD.x + 26, CARD.y + RESERVED_TOP + 45);
+    ctx2d.font = '700 12px "Space Grotesk", sans-serif';
+    ctx2d.fillText("START", gate.x + gate.w / 2, gate.y + gate.h + 15);
   }
   ctx2d.restore();
 }
@@ -664,7 +691,8 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
     ctx2d.fillText(`${layout.w} × ${layout.h} px`, rect.x + 18, rect.y + 57);
   }
   ctx2d.lineWidth = 2;
-  ctx2d.strokeStyle = "#ffffffed";
+  ctx2d.strokeStyle = state.templatePreview && !imageFitsSelectedFrame(layout) ?
+    "#ff9585" : "#ffffffed";
   ctx2d.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
 
   if (state.templatePreview) drawLiveitemLabels(ctx2d, layout, rect);
@@ -790,6 +818,10 @@ function bindEditor() {
   elements.templatePreview.addEventListener("click", () => {
     setTemplatePreview(!state.templatePreview);
   });
+  document.getElementById("fit-template-frame").addEventListener("click", () => {
+    setLayout(fitImageToSelectedFrame(state.layout));
+    notice(`Image fitted into frame${state.layout.frameId}.`);
+  });
   elements.export.addEventListener("click", downloadImage);
   elements.package = document.getElementById("download-package");
   document.getElementById("download-template").addEventListener("click", downloadTemplate);
@@ -860,7 +892,19 @@ function bindEditor() {
     if (state.drag || !event.isPrimary) return;
     const point = toCanvasPoint(event.clientX, event.clientY, canvas.getBoundingClientRect());
     const action = hitTest(state.layout, point);
-    if (!action) return;
+    if (!action) {
+      if (state.templatePreview) {
+        const frame = previewFrames(state.layout).find(slot =>
+          point.x >= slot.x && point.x <= slot.x + slot.w &&
+          point.y >= slot.y && point.y <= slot.y + slot.h
+        );
+        if (frame && frame.id !== state.layout.frameId) {
+          setLayout({ ...state.layout, frameId: frame.id });
+          notice(`Frame${frame.id} selected. Drag the image or use Fit to frame.`);
+        }
+      }
+      return;
+    }
     event.preventDefault();
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(event.pointerId);
@@ -872,7 +916,13 @@ function bindEditor() {
     const point = toCanvasPoint(event.clientX, event.clientY, canvas.getBoundingClientRect());
     if (!state.drag) {
       const action = hitTest(state.layout, point);
-      canvas.style.cursor = action === "resize" ? "nwse-resize" : action === "move" ? "grab" : "default";
+      const frameHover = state.templatePreview &&
+        previewFrames(state.layout).some(slot =>
+          point.x >= slot.x && point.x <= slot.x + slot.w &&
+          point.y >= slot.y && point.y <= slot.y + slot.h
+        );
+      canvas.style.cursor = action === "resize" ? "nwse-resize" :
+        action === "move" ? "grab" : frameHover ? "pointer" : "default";
       return;
     }
     if (event.pointerId !== state.drag.pointerId) return;

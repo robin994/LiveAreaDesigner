@@ -2,6 +2,7 @@
 #include "exporter.h"
 #include "font.h"
 #include "template_preview.h"
+#include "template_slots.h"
 
 #include <SDL.h>
 #include <SDL_image.h>
@@ -137,11 +138,13 @@ static void toggle_template_preview(App *a) {
     a->cfg.preview_template = !a->cfg.preview_template;
     a->dirty = true;
     set_status(a, a->cfg.preview_template ?
-               "TEMPLATE PREVIEW ON - POSITIONS APPROXIMATE" :
+               "TEMPLATE PREVIEW ON - NATIVE RCO FRAME GEOMETRY" :
                "TEMPLATE PREVIEW OFF");
 }
 static void cycle_template_style(App *a) {
     a->cfg.template_style = (a->cfg.template_style + 1) % LAD_STYLE_COUNT;
+    a->cfg.frame_id = clampi(a->cfg.frame_id, 1,
+                             lad_template_frame_count(a->cfg.template_style));
     a->dirty = true;
     char status_text[96];
     snprintf(status_text, sizeof(status_text), "TEMPLATE STYLE: %s",
@@ -149,7 +152,8 @@ static void cycle_template_style(App *a) {
     set_status(a, status_text);
 }
 static void cycle_template_frame(App *a) {
-    a->cfg.frame_id = (a->cfg.frame_id % 3) + 1;
+    a->cfg.frame_id =
+        (a->cfg.frame_id % lad_template_frame_count(a->cfg.template_style)) + 1;
     a->dirty = true;
     char status_text[96];
     snprintf(status_text, sizeof(status_text), "TEMPLATE FRAME: %d", a->cfg.frame_id);
@@ -163,7 +167,8 @@ static void normalize(App *a) {
     a->cfg.card_color = clampi(a->cfg.card_color, 0, LAD_PALETTE_COUNT - 1);
     a->cfg.button_color = clampi(a->cfg.button_color, 0, LAD_PALETTE_COUNT - 1);
     a->cfg.template_style = clampi(a->cfg.template_style, 0, LAD_STYLE_COUNT - 1);
-    a->cfg.frame_id = clampi(a->cfg.frame_id, 1, 3);
+    a->cfg.frame_id = clampi(a->cfg.frame_id, 1,
+                             lad_template_frame_count(a->cfg.template_style));
     a->cfg.preview_template = a->cfg.preview_template ? 1 : 0;
     if (a->cfg.aspect_width <= 0 || a->cfg.aspect_height <= 0) {
         a->cfg.aspect_width = a->cfg.w;
@@ -298,6 +303,29 @@ static void editor_adjust(App *a, int dx, int dy, int step) {
     normalize(a);
     a->dirty = true;
 }
+static void fit_image_to_template_frame(App *a) {
+    const LadTemplateSlot *slot =
+        lad_template_frame(a->cfg.template_style, a->cfg.frame_id);
+    if (!slot || slot->width < MIN_SIZE || slot->height < MIN_SIZE) {
+        set_status(a, "FRAME HAS DYNAMIC OR UNSUPPORTED DIMENSIONS");
+        return;
+    }
+    int w = a->cfg.w < slot->width ? a->cfg.w : slot->width;
+    int h = a->cfg.h < slot->height ? a->cfg.h : slot->height;
+    if (a->cfg.aspect_lock && a->cfg.aspect_height > 0) {
+        const float ratio = (float)a->cfg.aspect_width / a->cfg.aspect_height;
+        if (w > roundi(h * ratio)) w = roundi(h * ratio);
+        h = roundi(w / ratio);
+        if (h > slot->height) { h = slot->height; w = roundi(h * ratio); }
+    }
+    a->cfg.w = clampi(w, MIN_SIZE, CARD_W);
+    a->cfg.h = clampi(h, MIN_SIZE, CARD_H - SAFE_TOP);
+    a->cfg.x = 420 + slot->center_x - a->cfg.w / 2;
+    a->cfg.y = 250 - slot->center_y - a->cfg.h / 2;
+    normalize(a);
+    a->dirty = true;
+    set_status(a, "IMAGE FITTED TO THE SELECTED RCO FRAME");
+}
 static void settings_adjust(App *a, int delta) {
     int *p = NULL;
     if (!a->settings_tab) {
@@ -324,10 +352,14 @@ static void settings_adjust(App *a, int delta) {
         }
     }
     if (!p) return;
-    const int range = a->settings_tab
-                    ? (a->setting_row == 3 ? LAD_STYLE_COUNT : 3) : LAD_PALETTE_COUNT;
+    const int range = a->settings_tab ?
+        (a->setting_row == 3 ? LAD_STYLE_COUNT :
+         lad_template_frame_count(a->cfg.template_style)) : LAD_PALETTE_COUNT;
     const int start = a->settings_tab && a->setting_row == 4 ? 1 : 0;
     *p = ((*p - start + delta + range) % range) + start;
+    if (a->settings_tab && a->setting_row == 3)
+        a->cfg.frame_id = clampi(a->cfg.frame_id, 1,
+                                 lad_template_frame_count(a->cfg.template_style));
     a->dirty = true;
 }
 static void settings_confirm(App *a) {
@@ -377,6 +409,25 @@ static void pointer_down(App *a, int x, int y) {
             a->settings_tab = !a->settings_tab; a->setting_row = 0; return;
         }
         if (a->settings_tab) {
+            if (a->cfg.preview_template && hit(x, y, (Rect){524, 150, 378, 225})) {
+                const LadTemplateLayout *layout = lad_template_layout(a->cfg.template_style);
+                const Rect card = {524, 150, 378, 225};
+                for (int i = 0; i < layout->frame_count; ++i) {
+                    const LadTemplateSlot *slot = &layout->frames[i];
+                    if (slot->width <= 0 || slot->height <= 0) continue;
+                    const Rect bounds = {
+                        card.x + (420 + slot->center_x - slot->width / 2) * card.w / CARD_W,
+                        card.y + (250 - slot->center_y - slot->height / 2) * card.h / CARD_H,
+                        slot->width * card.w / CARD_W, slot->height * card.h / CARD_H
+                    };
+                    if (hit(x, y, bounds)) {
+                        a->cfg.frame_id = i + 1;
+                        a->dirty = true;
+                        set_status(a, "SELECTED NATIVE RCO FRAME");
+                        return;
+                    }
+                }
+            }
             if (hit(x, y, (Rect){524, 448, 380, 41})) {
                 a->setting_row = 8; open_browser(a, 5); return;
             }
@@ -449,7 +500,27 @@ static void pointer_down(App *a, int x, int y) {
     Rect grip = {rectangle.x + rectangle.w - 20,
                  rectangle.y + rectangle.h - 20, 40, 40};
     bool on_grip = hit(x, y, grip);
-    if (!hit(x, y, rectangle) && !on_grip) return;
+    if (!hit(x, y, rectangle) && !on_grip) {
+        if (a->cfg.preview_template) {
+            const LadTemplateLayout *layout = lad_template_layout(a->cfg.template_style);
+            for (int i = 0; i < layout->frame_count; ++i) {
+                const LadTemplateSlot *slot = &layout->frames[i];
+                if (slot->width <= 0 || slot->height <= 0) continue;
+                const Rect bounds = {
+                    CARD_X + 420 + slot->center_x - slot->width / 2,
+                    CARD_Y + 250 - slot->center_y - slot->height / 2,
+                    slot->width, slot->height
+                };
+                if (hit(x, y, bounds)) {
+                    a->cfg.frame_id = i + 1;
+                    a->dirty = true;
+                    set_status(a, "SELECTED NATIVE RCO FRAME");
+                    return;
+                }
+            }
+        }
+        return;
+    }
     a->drag = true;
     a->drag_resize = on_grip;
     a->grab_x = x;
@@ -478,6 +549,8 @@ static void press(App *a, int button) {
     case SDL_CONTROLLER_BUTTON_A: /* Cross */
         if (a->screen == SCREEN_SETTINGS) settings_confirm(a);
         else if (a->screen == SCREEN_BROWSER) browser_select(a);
+        else if (a->screen == SCREEN_EDITOR && a->cfg.preview_template)
+            fit_image_to_template_frame(a);
         break;
     case SDL_CONTROLLER_BUTTON_B: /* Circle */
         if (a->screen == SCREEN_BROWSER) browser_back(a);
@@ -547,12 +620,33 @@ static void draw_image(SDL_Renderer *r, SDL_Texture *texture, Rect dest) {
     SDL_Rect rect = {dest.x, dest.y, dest.w, dest.h};
     SDL_RenderCopy(r, texture, NULL, &rect);
 }
+static Rect template_slot_rect(Rect card, const LadTemplateSlot *slot) {
+    /* RCO slot positions: centered in 840x500 card, Y positive upward. */
+    const int left = 420 + slot->center_x - slot->width / 2;
+    const int top = 250 - slot->center_y - slot->height / 2;
+    return (Rect) {
+        card.x + left * card.w / CARD_W,
+        card.y + top * card.h / CARD_H,
+        slot->width * card.w / CARD_W,
+        slot->height * card.h / CARD_H
+    };
+}
+static bool image_fits_selected_frame(const App *a) {
+    const LadTemplateSlot *slot =
+        lad_template_frame(a->cfg.template_style, a->cfg.frame_id);
+    if (!slot || slot->width <= 0 || slot->height <= 0) return false;
+    const Rect frame = template_slot_rect((Rect){0, 0, CARD_W, CARD_H}, slot);
+    return a->cfg.x >= frame.x && a->cfg.y >= frame.y &&
+           a->cfg.x + a->cfg.w <= frame.x + frame.w &&
+           a->cfg.y + a->cfg.h <= frame.y + frame.h;
+}
 static void draw_template_chrome(App *a, Rect card) {
     SDL_Renderer *r = a->renderer;
     const int mini = card.w < CARD_W;
     const int scale = mini ? 1 : 2;
     const int protected_h = SAFE_TOP * card.h / CARD_H;
     const LadPreviewGate placement = lad_preview_gate(a->cfg.template_style);
+    const LadTemplateLayout *layout = lad_template_layout(a->cfg.template_style);
     Rect gate = {
         card.x + placement.x * card.w / CARD_W,
         card.y + placement.y * card.h / CARD_H,
@@ -580,27 +674,62 @@ static void draw_template_chrome(App *a, Rect card) {
     label(a, right - action_w + (mini ? 1 : 8),
           action_y + (mini ? 5 : 8), "UPDATE", 1, TEXT, 0);
 
-    box(r, (Rect){gate.x - 3, gate.y - 3, gate.w + 6, gate.h + (mini ? 19 : 33)},
-        (SDL_Color){20, 31, 52, 255}, 224);
-    if (a->gate_texture) {
-        draw_image(r, a->gate_texture, gate);
-    } else {
-        box(r, gate, (SDL_Color){76, 82, 125, 255}, 255);
-        label(a, gate.x + (mini ? 5 : 35), gate.y + gate.h / 2 - 5,
-              "STARTUP", scale, TEXT, 0);
+    /* Render every RCO frame, not only the editor's free-moving image. */
+    for (int i = 0; i < layout->frame_count; ++i) {
+        const LadTemplateSlot *slot = &layout->frames[i];
+        const int dynamic = slot->width <= 0 || slot->height <= 0;
+        Rect rect = template_slot_rect(card, slot);
+        if (dynamic) {
+            const int cy = card.y + (250 - slot->center_y) * card.h / CARD_H;
+            const int cx = card.x + (420 + slot->center_x) * card.w / CARD_W;
+            rect = (Rect){cx - (mini ? 20 : 32),
+                          cy - (mini ? 10 : 15),
+                          mini ? 40 : 64, mini ? 20 : 30};
+        }
+        if (rect.w <= 0 || rect.h <= 0) continue;
+        const bool selected = i + 1 == a->cfg.frame_id;
+        box(r, rect, selected ?
+            (SDL_Color){135, 64, 132, 255} :
+            (SDL_Color){25, 47, 78, 255}, selected ? 168 : 188);
+        outline(r, rect, selected ? GOLD : MUTED);
+        if (selected && rect.w > 4 && rect.h > 4)
+            outline(r, (Rect){rect.x + 2, rect.y + 2,
+                              rect.w - 4, rect.h - 4}, GOLD);
+        char desc[64];
+        snprintf(desc, sizeof(desc), "FRAME%d", i + 1);
+        label(a, rect.x + (mini ? 2 : 7), rect.y + (mini ? 4 : 12),
+              desc, mini ? 1 : 2, selected ? GOLD : TEXT, 0);
+        if (!mini && rect.h > 55) {
+            snprintf(desc, sizeof(desc), dynamic ?
+                     "DYNAMIC" : "%d x %d", slot->width, slot->height);
+            label(a, rect.x + 8, rect.y + 33, desc, 1, MUTED, 0);
+        }
     }
-    outline(r, gate, TEXT);
-    Rect start = {
-        gate.x + (mini ? 16 : 54), gate.y + gate.h + (mini ? 2 : 5),
-        gate.w - (mini ? 32 : 108), mini ? 13 : 21
-    };
-    box(r, start, (SDL_Color){58, 158, 231, 255}, 255);
-    label(a, start.x + (mini ? 6 : 24), start.y + (mini ? 3 : 5),
-          "START", mini ? 1 : 2, TEXT, 0);
 
-    char style[64];
-    snprintf(style, sizeof(style), "%s  FRAME%d",
-             lad_preview_style_name(a->cfg.template_style), a->cfg.frame_id);
+    if (placement.known_alignment) {
+        box(r, (Rect){gate.x - 3, gate.y - 3, gate.w + 6, gate.h + (mini ? 19 : 33)},
+            (SDL_Color){20, 31, 52, 255}, 224);
+        if (a->gate_texture) {
+            draw_image(r, a->gate_texture, gate);
+        } else {
+            box(r, gate, (SDL_Color){76, 82, 125, 255}, 255);
+            label(a, gate.x + (mini ? 5 : 35), gate.y + gate.h / 2 - 5,
+                  "STARTUP", scale, TEXT, 0);
+        }
+        outline(r, gate, TEXT);
+        Rect start = {
+            gate.x + (mini ? 16 : 54), gate.y + gate.h + (mini ? 2 : 5),
+            gate.w - (mini ? 32 : 108), mini ? 13 : 21
+        };
+        box(r, start, (SDL_Color){58, 158, 231, 255}, 255);
+        label(a, start.x + (mini ? 6 : 24), start.y + (mini ? 3 : 5),
+              "START", mini ? 1 : 2, TEXT, 0);
+    }
+
+    char style[80];
+    snprintf(style, sizeof(style), "%s  FRAME%d/%d",
+             lad_preview_style_name(a->cfg.template_style), a->cfg.frame_id,
+             layout->frame_count);
     box(r, (Rect){card.x + 6, card.y + protected_h + 7,
                   mini ? 150 : 250, mini ? 16 : 29},
         (SDL_Color){12, 20, 39, 255}, 214);
@@ -639,7 +768,8 @@ static void draw_card(App *a, Rect card, bool guides) {
     if (!a->cfg.transparent_button)
         box(r, b, palette[a->cfg.button_color], a->button_texture ? 255 : 228);
     draw_image(r, a->button_texture, b);
-    outline(r, b, TEXT);
+    outline(r, b, a->cfg.preview_template && !image_fits_selected_frame(a) ?
+            (SDL_Color){255, 135, 115, 255} : TEXT);
     if (a->cfg.preview_template) {
         const int mini = card.w < CARD_W;
         char frame_title[60];
@@ -652,7 +782,7 @@ static void draw_card(App *a, Rect card, bool guides) {
                   clampi(b.w / 6, 1, 50));
         }
         if (!mini) label(a, card.x + 10, card.y + card.h - 16,
-                         "TEMPLATE PREVIEW - SLOT POSITIONS APPROXIMATE", 1, GOLD, 0);
+                         "NATIVE RCO FRAME GEOMETRY - SYSTEM ART ILLUSTRATIVE", 1, GOLD, 0);
     }
     if (guides) {
         box(r, (Rect){b.x + b.w - 9, b.y + b.h - 9, 18, 18}, GOLD, 255);
@@ -674,7 +804,7 @@ static void draw_editor(App *a) {
     box(r, (Rect){0, 512, SW, 32}, (SDL_Color){6, 9, 23, 255}, 250);
     label(a, 12, 520, a->resize_mode ? "MODE: RESIZE" : "MODE: MOVE", 2, GOLD, 0);
     label(a, 240, 520, a->cfg.preview_template ?
-          "SQUARE:STYLE  L:FRAME  TRI:MODE  R:10" :
+          "SQUARE:STYLE  L:FRAME  X:FIT  TRI:MODE" :
           "TRIANGLE:MODE  START:SETTINGS  R:10  O:EXIT",
           2, TEXT, 58);
     box(r, (Rect){752, 514, 201, 26},
