@@ -4,6 +4,7 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <png.h>
+#include <zlib.h>
 #include <psp2/io/dirent.h>
 #include <psp2/io/stat.h>
 #include <stdio.h>
@@ -38,6 +39,10 @@ static bool encode_png8(SDL_Surface *src, const char *filename, bool alpha) {
     if (setjmp(png_jmpbuf(png))) goto done;
 
     png_init_io(png, file);
+    /* PNG8 already uses a quantized palette; stronger zlib + adaptive filters
+       shrink the output without further changing pixel colors or alpha. */
+    png_set_compression_level(png, Z_BEST_COMPRESSION);
+    png_set_filter(png, PNG_FILTER_TYPE_BASE, PNG_ALL_FILTERS);
     png_set_IHDR(png, info, (png_uint_32)src->w, (png_uint_32)src->h, 8,
                  PNG_COLOR_TYPE_PALETTE, PNG_INTERLACE_NONE,
                  PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);

@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — v1.23, multi-frame liveitems and RCO-based preview.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — v1.24, VPK editing, optimized PNG8 and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -13,7 +13,7 @@ LiveArea Designer helps homebrew authors prototype the images and layout of a PS
 - **Fixed aspect ratio** mode to prevent image distortion.
 - **Transparent button background** mode. Transparent PNG pixels remain transparent in the indexed PNG8 export; JPG content remains opaque.
 - Import PNG/JPG for the card background, movable frame button, fixed startup gate, plus optional bubble icon and bootscreen.
-- Pick ten default colors and display frame sizes/offsets.
+- Optional fallback colors (under **Advanced appearance**) and precise frame offsets.
 - Choose one LiveArea style and frame, with optional target URI, text, language restriction, age limit, Vita-only model and autoflip (see notes below).
 - Save **template.xml** and an accompanying export of **8-bit indexed PNG assets** (up to 225 palette entries including a transparent slot).
 - Add optional **manual pages**, packaged in numerical order starting at `sce_sys/manual/001.png`.
@@ -26,6 +26,22 @@ The preview uses **actual slot geometry**, but is **not** a pixel-perfect emulat
 **https://robin994.github.io/LiveAreaDesigner/**
 
 Everything runs in your browser; images never leave your computer. Choose PNG/JPG assets through the normal file picker or drag-and-drop. Layout settings use localStorage, images use IndexedDB. Supported on modern desktop and mobile browsers; the Vita's built-in browser is not a target.
+
+### Edit an existing VPK in the browser
+
+1. Click **Open VPK…** below the preview and choose a homebrew `.vpk`. The editor reads its `sce_sys/livearea/contents/template.xml` and the associated supported PNG/JPG artwork entirely in the browser.
+2. Choose the frame to edit, update its image, geometry, link and text. Unrelated game files are **never exposed to the editor or edited**.
+3. Click **Export modified VPK**. A newly named `<original>-livearea.vpk` is downloaded; your input file remains unchanged. The compressed `eboot.bin` and unrelated game/data entries are passed through without changing their bytes.
+
+Imported frame images that were not replaced or resized are reused **byte for byte** where feasible, avoiding an unnecessary PNG8 recompression. A source VPK is kept in browser memory only for the current page session, so reopen it after refreshing if you need another VPK export. There is no server-side upload.
+
+The web importer supports **non-encrypted, single-volume ZIP32 archives up to 512 MiB** and common `template.xml` fields. It intentionally rejects corrupt or unsupported ZIPs. It edits typical homebrew LiveArea templates, **not** DRM-protected packages, and does not promise to preserve arbitrary custom XML extensions, complex language variants, multiple liveitems per frame or digital signatures. Its generated `template.xml` follows the editor's single-liveitem-per-frame model. Keep a backup and test the modified VPK on your Vita.
+
+### Image compression
+
+PNG assets were already compressed in older releases: LiveArea Designer converts them to **indexed 8-bit PNGs (PNG8) with zlib/DEFLATE**, using a Vita-compatible format. Version 1.24 adds **Optimize PNG8 images** (on by default): unused palette colors are removed and adaptive filters are used to improve zlib compression. This does not introduce additional precision loss compared with existing PNG8 export.
+
+PNG8 conversion itself remains a **lossy quantization** of RGB colors with binary alpha (fully transparent/opaque); gradients and partial transparency may appear different. Imported, unchanged image bytes are preserved when patching a VPK if their dimensions and rendering properties remain compatible. ZIP/VPK containers need not additionally DEFLATE PNG files, as PNG's IDAT payload is already compressed.
 
 **Template preview:** click **Preview Template** above the canvas (or press **P**) to switch between the freeform editor and the RCO-based layout. Changing `Layout Style` changes the native frame layout and count (e.g. `a1` has 3 slots, `a3` has 5 and `a5` has 7). Click a frame to edit **that frame's own liveitem**: upload PNG/JPG using **FrameN image**, adjust size and position using the editor or Geometry inputs, change frame background, text and target in the inspector. The preview renders the selected image in the appropriate slot; other configured frames remain visible at the same time. The selected native frame has a gold outline, and editing handles act only on its liveitem. **Fit image to selected frame** centers/scales it into the slot. **Export PNG Preview** captures the active mode; settings and images survive refresh.
 
@@ -61,6 +77,8 @@ PNG assets use a quantized indexed palette. Colors are approximated and alpha is
 
 Install the `LIVAREA01.vpk` from [Releases](https://github.com/robin994/LiveAreaDesigner/releases). Title ID: `LIVAREA01`. A local config is saved to `ux0:data/LiveAreaDesigner/settings.ini`. Only the **front touchscreen** is accepted; the rear panel is ignored.
 
+The native **Template + VPK** Settings tab has **Open VPK** and **Patch VPK** controls. Browse to an existing homebrew VPK, import its basic LiveArea images/geometry, then adjust the frames and choose Patch VPK. The original VPK is never modified; the output is written to `ux0:data/LiveAreaDesigner/export/modified_livearea.vpk`. Only supported artwork/text/layout fields are imported; advanced multi-liveitem XML features are not retained. For large archives allow enough free disk space for a second complete VPK file. The native encoder automatically uses strong PNG8 zlib compression and adaptive filters. Keep your original VPK and validate the edited package on the console.
+
 ### Controls
 
 | Input | Action |
@@ -82,6 +100,8 @@ Install the `LIVAREA01.vpk` from [Releases](https://github.com/robin994/LiveArea
 | D-pad + Cross | Navigate / select options / browse |
 | Square on image row | Clear image |
 | Cross on XML + Assets > Export | Save XML and PNG8 assets |
+| Template + VPK > Open VPK | Browse existing `.vpk` files and import basic LiveArea resources |
+| Template + VPK > Patch VPK | Export a separate modified VPK without changing the original |
 | XML + Assets > Select Manual Folder | Browse to a directory; press **Square** to use it |
 | Circle | Back / save / exit |
 
@@ -130,12 +150,13 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (v1.23). RCO geometry is verified against the user's own Vita firmware, but the rendered multi-frame preview and newly generated XML/PNG8 assets still require end-to-end hardware testing.
+Output: `build/LIVAREA01.vpk` (v1.24). RCO geometry is verified against the user's own Vita firmware, but the new VPK editing workflow and generated XML/PNG8 assets still require end-to-end hardware testing.
 
 Tests:
 
 ```sh
 node --test tests/web-geometry.test.mjs
+node --test tests/vpk-archive.test.mjs
 node tests/web-browser-smoke.mjs  # Requires Google Chrome
 mkdir -p build/host-test
 clang -std=c99 -Wall -Wextra -Werror -Isrc src/exporter_xml.c src/template_slots.c tests/exporter_xml_smoke.c -o build/host-test/exporter_xml_smoke
@@ -169,5 +190,6 @@ This generates `docs/template-slots.mjs` and `src/template_slots.c/.h` from the 
 - Support multiple language-specific liveitems **within an individual frame** (currently one liveitem per frame) and meaningful multi-liveitem autoflip behavior.
 - Add on-device text/target editing rather than requiring direct edits to `settings.ini`.
 - Validate indexed PNGs and installed XML on real hardware and update compatibility notes.
+- Preserve custom template.xml structures (multiple liveitems per frame, localization variants and legacy/animated elements) when patching older VPKs instead of normalizing those fields.
 
 [MIT license](LICENSE). Independent homebrew; not affiliated with Sony Interactive Entertainment.

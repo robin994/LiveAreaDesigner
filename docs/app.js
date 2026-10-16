@@ -2,16 +2,18 @@ import {
   SCREEN, CARD, RESERVED_TOP, PALETTE, DEFAULT_LAYOUT, centeredOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
-} from "./geometry.mjs?v=1.23";
-import { generateTemplate } from "./template.mjs?v=1.23";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.23";
+} from "./geometry.mjs?v=1.24";
+import { generateTemplate } from "./template.mjs?v=1.24";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.24";
 import {
   previewGate, previewFrames, previewSummary, frameRelativeOffsets,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
-} from "./template-preview.mjs?v=1.23";
+} from "./template-preview.mjs?v=1.24";
 import {
   frameKey, frameLayoutFor, allFrameLayouts, clampLiveitemToFrame
-} from "./frame-model.mjs?v=1.23";
+} from "./frame-model.mjs?v=1.24";
+import { readVpk, patchVpk } from "./vpk.mjs?v=1.24";
+import { readVpkProject } from "./vpk-import.mjs?v=1.24";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";
@@ -49,9 +51,11 @@ const state = {
   frameImageKeys: Array.isArray(stored?.frameImageKeys) ? stored.frameImageKeys : [],
   mode: stored?.mode === "resize" ? "resize" : "move",
   guides: stored?.guides !== false,
+  optimizeImages: stored?.optimizeImages !== false,
   templatePreview: stored?.templatePreview === true,
   images: { card: null, button: null, frames: {}, gate: null, icon: null, boot: null, manual: [] },
-  drag: null
+  drag: null,
+  vpk: null
 };
 const initialFrameKey = frameKey(state.layout.templateStyle, state.layout.frameId);
 state.frameLayouts[initialFrameKey] = { ...state.layout };
@@ -77,7 +81,7 @@ function savePreferences() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
       layout: state.layout, mode: state.mode, guides: state.guides,
-      templatePreview: state.templatePreview,
+      templatePreview: state.templatePreview, optimizeImages: state.optimizeImages,
       frameLayouts: state.frameLayouts,
       frameImageKeys: state.frameImageKeys
     }));
@@ -918,13 +922,141 @@ async function downloadPackage() {
   const buttons = [elements.package, document.getElementById("download-package-side")];
   for (const button of buttons) button.disabled = true;
   try {
-    const pack = await buildLiveAreaPackage(state.layout, state.images, state.frameLayouts);
+    const pack = await buildLiveAreaPackage(state.layout, state.images, state.frameLayouts,
+      { optimizeImages: state.optimizeImages });
     downloadBlob(pack, "LiveAreaDesigner-assets.zip");
-    notice("LiveArea ZIP exported with indexed PNGs and template.xml.");
+    notice(`LiveArea ZIP exported (${Math.round(pack.size / 1024)} KiB; PNG8 + zlib).`);
   } catch (error) {
     notice(error.message || "Unable to export LiveArea assets.");
   } finally {
     for (const button of buttons) button.disabled = false;
+  }
+}
+
+async function importExistingVpk(file) {
+  if (!file) return;
+  const open = document.getElementById("open-vpk");
+  const save = document.getElementById("save-vpk");
+  const statusLine = document.getElementById("vpk-status");
+  open.disabled = save.disabled = true;
+  statusLine.textContent = "Reading VPK and importing LiveArea assets…";
+  const pendingUrls = [];
+  try {
+    const archive = await readVpk(file);
+    const parsed = await readVpkProject(archive);
+    const imported = new Map();
+    for (const [key, original] of parsed.assets) {
+      try {
+        await validateFile(original);
+        const loaded = await imageDimensions(original, original.name);
+        loaded.fromVpkPath = parsed.paths.get(key) ||
+          (key === "icon" ? "sce_sys/icon0.png" :
+           key === "boot" ? "sce_sys/pic0.png" : null);
+        pendingUrls.push(loaded.url);
+        imported.set(key, loaded);
+      } catch (error) {
+        parsed.notes.push(`Cannot preview ${original.name}: ${error.message}`);
+      }
+    }
+    // A new VPK is a new project. Clear stale per-project images before
+    // persisting the new set, without touching the source VPK file itself.
+    const oldKeys = [...state.frameImageKeys];
+    for (const key of oldKeys) {
+      try { await assetOperation("delete", `frame:${key}`); } catch { /* session remains editable */ }
+    }
+    for (const target of ["card", "gate", "icon", "boot", "manual", "button"]) {
+      try { await assetOperation("delete", target); } catch { /* local cache optional */ }
+    }
+    for (const entry of [...Object.values(state.images.frames),
+      state.images.card, state.images.gate, state.images.icon, state.images.boot,
+      ...state.images.manual]) {
+      if (entry?.url) URL.revokeObjectURL(entry.url);
+    }
+    state.images = { card: null, button: null, frames: {},
+      gate: null, icon: null, boot: null, manual: [] };
+    state.frameLayouts = parsed.frameLayouts;
+    state.layout = parsed.layout;
+    state.frameImageKeys = [];
+    state.templatePreview = true;
+    for (const [key, loaded] of imported) {
+      if (key.includes(":")) {
+        state.images.frames[key] = loaded;
+        state.frameImageKeys.push(key);
+      } else {
+        state.images[key] = loaded;
+      }
+      try {
+        await assetOperation("put", key.includes(":") ? `frame:${key}` : key,
+          { blob: loaded.blob, name: loaded.name });
+      } catch {
+        parsed.notes.push("Your browser did not persist all images for later visits.");
+      }
+    }
+    state.images.button = state.images.frames[frameKey(state.layout.templateStyle,
+      state.layout.frameId)] || null;
+    state.vpk = archive; // Large binary is kept only for this page session.
+    state.importedLayouts = Object.fromEntries(
+      Object.entries(parsed.frameLayouts).map(([key, value]) => [key, { ...value }]));
+    state.importedCardColor = parsed.layout.cardColor;
+    savePreferences();
+    updateManualCount();
+    updateInterface(); // Do not report import complete with stale frame controls.
+    scheduleDraw();
+    save.disabled = false;
+    const extra = parsed.notes.length ? ` ${parsed.notes[0]}` : "";
+    statusLine.textContent = `${file.name} · ${archive.entries.length} files · ${parsed.frameLayouts
+      ? Object.keys(parsed.frameLayouts).length : 0} editable frames. Original preserved.${extra}`;
+    notice(`Imported ${file.name}. Select a frame and edit its images.`);
+  } catch (error) {
+    statusLine.textContent = `Import failed: ${error.message || "Unknown error"}`;
+    for (const url of pendingUrls) URL.revokeObjectURL(url);
+    save.disabled = !state.vpk;
+    notice(error.message || "VPK import failed.");
+  } finally {
+    open.disabled = false;
+  }
+}
+
+async function downloadModifiedVpk() {
+  if (!state.vpk) return;
+  const button = document.getElementById("save-vpk");
+  const statusLine = document.getElementById("vpk-status");
+  button.disabled = true;
+  statusLine.textContent = "Compressing PNG8 images and repacking VPK locally…";
+  try {
+    const assets = await buildLiveAreaPackage(state.layout, state.images,
+      state.frameLayouts, { optimizeImages: state.optimizeImages });
+    const preserve = new Map();
+    const root = "sce_sys/livearea/contents/";
+    if (state.images.card?.fromVpkPath &&
+        state.layout.cardColor === state.importedCardColor)
+      preserve.set(root + "bg0.png", state.images.card.fromVpkPath);
+    if (state.images.gate?.fromVpkPath)
+      preserve.set(root + "startup.png", state.images.gate.fromVpkPath);
+    for (const item of allFrameLayouts(state.layout, state.frameLayouts)) {
+      const key = frameKey(item.templateStyle, item.frameId);
+      const imported = state.importedLayouts?.[key];
+      const artwork = state.images.frames[key];
+      if (artwork?.fromVpkPath && imported &&
+          item.w === imported.w && item.h === imported.h &&
+          item.buttonColor === imported.buttonColor &&
+          item.transparentButton === imported.transparentButton)
+        preserve.set(root + `frame${item.frameId}.png`, artwork.fromVpkPath);
+    }
+    if (state.images.icon?.fromVpkPath)
+      preserve.set("sce_sys/icon0.png", state.images.icon.fromVpkPath);
+    if (state.images.boot?.fromVpkPath)
+      preserve.set("sce_sys/pic0.png", state.images.boot.fromVpkPath);
+    const vpk = await patchVpk(state.vpk, assets, { preserve });
+    const basename = state.vpk.filename.replace(/\.vpk$/i, "");
+    downloadBlob(vpk, `${basename}-livearea.vpk`);
+    statusLine.textContent = `${state.vpk.filename} · ${state.vpk.entries.length} original files preserved. Modified VPK: ${(vpk.size / 1048576).toFixed(1)} MiB.`;
+    notice("Modified VPK exported. The original file was not changed.");
+  } catch (error) {
+    statusLine.textContent = `VPK export failed: ${error.message || "Unknown error"}`;
+    notice(error.message || "Could not export the VPK.");
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -970,6 +1102,18 @@ function bindEditor() {
   document.getElementById("download-template").addEventListener("click", downloadTemplate);
   elements.package.addEventListener("click", downloadPackage);
   document.getElementById("download-package-side").addEventListener("click", downloadPackage);
+  document.getElementById("optimize-png").checked = state.optimizeImages;
+  document.getElementById("optimize-png").addEventListener("change", event => {
+    state.optimizeImages = event.target.checked;
+    savePreferences();
+  });
+  const vpkInput = document.getElementById("vpk-file");
+  document.getElementById("open-vpk").addEventListener("click", () => vpkInput.click());
+  vpkInput.addEventListener("change", async () => {
+    await importExistingVpk(vpkInput.files?.[0]);
+    vpkInput.value = "";
+  });
+  document.getElementById("save-vpk").addEventListener("click", downloadModifiedVpk);
   elements.copy.addEventListener("click", copyCoordinates);
   elements.reset.addEventListener("click", () => {
     const { cardColor, buttonColor } = state.layout;

@@ -1,6 +1,6 @@
-import { CARD, PALETTE } from "./geometry.mjs?v=1.23";
-import { generateTemplate } from "./template.mjs?v=1.23";
-import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.23";
+import { CARD, PALETTE } from "./geometry.mjs?v=1.24";
+import { generateTemplate } from "./template.mjs?v=1.24";
+import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.24";
 
 const encoder = new TextEncoder();
 const SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
@@ -44,34 +44,96 @@ function chunk(type, bytes) {
  * PNGs built by browsers are usually 32-bit; indexed PNGs are more Vita-friendly.
  * Alpha values under 128 become fully transparent; others become opaque.
  */
-export async function encodeIndexedPng(width, height, rgba, allowTransparency = false) {
+export async function encodeIndexedPng(width, height, rgba, allowTransparency = false,
+                                      { optimize = true } = {}) {
   const raw = new Uint8Array((width + 1) * height);
-  const palette = new Uint8Array(225 * 3);
+  const basePalette = new Uint8Array(225 * 3);
   // Index 0 is transparent. Indices 1..224 represent a 7x8x4 RGB palette.
   for (let red = 0; red < 7; red++) {
     for (let green = 0; green < 8; green++) {
       for (let blue = 0; blue < 4; blue++) {
         const idx = 1 + (red * 8 + green) * 4 + blue;
-        palette[idx * 3] = Math.round(red * 255 / 6);
-        palette[idx * 3 + 1] = Math.round(green * 255 / 7);
-        palette[idx * 3 + 2] = Math.round(blue * 255 / 3);
+        basePalette[idx * 3] = Math.round(red * 255 / 6);
+        basePalette[idx * 3 + 1] = Math.round(green * 255 / 7);
+        basePalette[idx * 3 + 2] = Math.round(blue * 255 / 3);
       }
     }
   }
+  const indices = new Uint8Array(width * height);
+  const used = new Uint8Array(225);
+  if (allowTransparency) used[0] = 1;
   for (let y = 0; y < height; y++) {
     const row = y * (width + 1);
     raw[row] = 0;
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
       if (allowTransparency && rgba[i + 3] < 128) {
-        raw[row + 1 + x] = 0;
+        indices[y * width + x] = 0;
+        used[0] = 1;
         continue;
       }
       const red = Math.round(rgba[i] * 6 / 255);
       const green = Math.round(rgba[i + 1] * 7 / 255);
       const blue = Math.round(rgba[i + 2] * 3 / 255);
-      raw[row + 1 + x] = 1 + (red * 8 + green) * 4 + blue;
+      const index = 1 + (red * 8 + green) * 4 + blue;
+      indices[y * width + x] = index;
+      used[index] = 1;
     }
+  }
+  let palette = basePalette;
+  if (optimize) {
+    // Keep PNG8 (PS Vita compatible) while dropping unused palette entries.
+    // Only the index mapping changes; this does not introduce further color loss.
+    const translation = new Uint8Array(225);
+    let next = 0;
+    for (let original = 0; original < used.length; original++) {
+      if (!used[original]) continue;
+      translation[original] = next++;
+    }
+    palette = new Uint8Array(Math.max(1, next) * 3);
+    for (let original = 0; original < used.length; original++) {
+      if (used[original])
+        palette.set(basePalette.subarray(original * 3, original * 3 + 3),
+          translation[original] * 3);
+    }
+    for (let i = 0; i < indices.length; i++) indices[i] = translation[indices[i]];
+  }
+
+  // PNG filter selection reduces the size of the zlib stream for typical
+  // graphic/UI images; leave the legacy filter-0 variant as a fallback.
+  function paeth(a, b, c) {
+    const p = a + b - c;
+    const da = Math.abs(p - a), db = Math.abs(p - b), dc = Math.abs(p - c);
+    return da <= db && da <= dc ? a : db <= dc ? b : c;
+  }
+  for (let y = 0; y < height; y++) {
+    const dest = y * (width + 1);
+    const pos = y * width;
+    if (!optimize) {
+      raw[dest] = 0;
+      raw.set(indices.subarray(pos, pos + width), dest + 1);
+      continue;
+    }
+    let best = Infinity, filter = 0, result = null;
+    for (let type = 0; type <= 4; type++) {
+      const filtered = new Uint8Array(width);
+      let score = 0;
+      for (let x = 0; x < width; x++) {
+        const current = indices[pos + x];
+        const left = x > 0 ? indices[pos + x - 1] : 0;
+        const above = y > 0 ? indices[pos - width + x] : 0;
+        const upperLeft = y > 0 && x > 0 ? indices[pos - width + x - 1] : 0;
+        const prediction = type === 0 ? 0 :
+          type === 1 ? left : type === 2 ? above :
+            type === 3 ? (left + above) >>> 1 : paeth(left, above, upperLeft);
+        const delta = (current - prediction + 256) & 255;
+        filtered[x] = delta;
+        score += delta < 128 ? delta : 256 - delta;
+      }
+      if (score < best) { best = score; filter = type; result = filtered; }
+    }
+    raw[dest] = filter;
+    raw.set(result, dest + 1);
   }
   if (typeof CompressionStream !== "function")
     throw new Error("This browser cannot create Vita-compatible indexed PNGs.");
@@ -142,8 +204,11 @@ function artwork(width, height, background, source, transparent = false, placeho
   return context.getImageData(0, 0, width, height).data;
 }
 
-async function addImage(entries, filename, w, h, color, image, transparency, placeholder = false) {
-  const png = await encodeIndexedPng(w, h, artwork(w, h, color, image, transparency, placeholder), transparency);
+async function addImage(entries, filename, w, h, color, image, transparency,
+                        placeholder = false, optimization = true) {
+  const png = await encodeIndexedPng(w, h,
+    artwork(w, h, color, image, transparency, placeholder), transparency,
+    { optimize: optimization });
   entries.push({ name: filename, data: png });
 }
 
@@ -152,25 +217,28 @@ async function addImage(entries, filename, w, h, color, image, transparency, pla
  * Frame liveitem positions are frame-relative and should be tested with the
  * selected real Vita layout; the editor cannot change fixed gate/frame slots.
  */
-export async function buildLiveAreaPackage(layout, images, frameLayouts = {}) {
+export async function buildLiveAreaPackage(layout, images, frameLayouts = {},
+                                           { optimizeImages = true } = {}) {
   const root = "sce_sys/livearea/contents/";
   const entries = [{ name: root + "template.xml", data: generateTemplate(layout, frameLayouts) }];
   await addImage(entries, root + "bg0.png", CARD.width, CARD.height,
-    PALETTE[layout.cardColor].hex, images.card, false);
+    PALETTE[layout.cardColor].hex, images.card, false, false, optimizeImages);
   await addImage(entries, root + "startup.png", 280, 158,
-    PALETTE[layout.buttonColor].hex, images.gate, true, !images.gate);
+    PALETTE[layout.buttonColor].hex, images.gate, true, !images.gate, optimizeImages);
   for (const item of allFrameLayouts(layout, frameLayouts)) {
     const key = frameKey(item.templateStyle, item.frameId);
     await addImage(entries, root + `frame${item.frameId}.png`, item.w, item.h,
       PALETTE[item.buttonColor].hex,
       images.frames?.[key] ?? (item.frameId === layout.frameId ? images.button : null),
-      item.transparentButton);
+      item.transparentButton, false, optimizeImages);
   }
-  if (images.icon) await addImage(entries, "sce_sys/icon0.png", 128, 128, "#000000", images.icon, false);
-  if (images.boot) await addImage(entries, "sce_sys/pic0.png", 960, 544, "#000000", images.boot, false);
+  if (images.icon) await addImage(entries, "sce_sys/icon0.png", 128, 128, "#000000",
+    images.icon, false, false, optimizeImages);
+  if (images.boot) await addImage(entries, "sce_sys/pic0.png", 960, 544, "#000000",
+    images.boot, false, false, optimizeImages);
   for (const [i, page] of (images.manual || []).entries()) {
     await addImage(entries, `sce_sys/manual/${String(i + 1).padStart(3, "0")}.png`,
-      960, 544, "#000000", page, false);
+      960, 544, "#000000", page, false, false, optimizeImages);
   }
   return makeZip(entries);
 }

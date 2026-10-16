@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.24 - 2026-10-16 (experimental pre-release)
+
+- Cleaner web interface: collapsible fallback palette and advanced XML settings; measurements focus on X/Y/W/H, with secondary exports under **More tools**.
+- **Open existing VPK** on web: locally inspect a PS Vita ZIP/VPK, import supported layout/frame geometry and PNG/JPG artwork into the editor. File content never leaves the browser.
+- **Export modified VPK** on web: only requested `sce_sys/livearea/contents/*` assets and optional icon/manual artwork are replaced. Other entries, including the original `eboot.bin`, retain their compressed data, CRC and ZIP method. The source archive is never overwritten.
+- Preserve original compressed LiveArea artwork when only text/position/target changed and the image itself was not altered; avoid unnecessary lossy PNG8 conversions.
+- Added native Vita **Open VPK / Patch VPK** workflow with file-browser filtering for `.vpk`, selected common LiveArea fields/images import, and a separate output at `ux0:data/LiveAreaDesigner/export/modified_livearea.vpk`. Uses libzip and bounded 64 KiB file copying, never overwriting the source VPK.
+- PNG8 compression was present in 1.23; the web exporter now also removes unused indexed-palette colors and uses adaptive row filtering before zlib. The change does **not** further reduce color precision beyond existing PNG8 quantization. Vita uses libpng's high-compression zlib level and adaptive PNG filtering.
+- Added `Optimize PNG8 images` preference (web default ON), VPK archive integrity tests, Chrome end-to-end VPK import/edit/export test, and PNG8 size comparison.
+- ZIP32 VPKs up to 512 MiB are supported by the web importer; encrypted, split and ZIP64 input is rejected. Complex multi-liveitem XML is simplified to the one-editable-liveitem-per-frame model. Test the new VPK on a real PS Vita; signed/protected packages may not tolerate modification.
+
 ## v1.23 - 2026-10-16 (experimental pre-release)
 
 - Preview Template no longer draws an extra freeform rectangle over the system layout. Every native frame displays its own liveitem **inside its matching RCO frame slot**.

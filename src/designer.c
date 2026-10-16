@@ -3,6 +3,7 @@
 #include "font.h"
 #include "template_preview.h"
 #include "template_slots.h"
+#include "vpk_editor.h"
 
 #include <SDL.h>
 #include <SDL_image.h>
@@ -55,6 +56,7 @@ typedef struct {
     int grab_x, grab_y;
     Rect start_button;
     char message[112];
+    char vpk_source[LAD_PATH_MAX]; /* Input file is always read-only. */
     Uint32 message_until;
 } App;
 
@@ -335,6 +337,7 @@ static void clear_image(App *a, int target) {
 }
 static void open_browser(App *a, int target) {
     a->browse_target = target;
+    a->browser.filter_vpk = target == 6;
     browser_root(&a->browser);
     a->screen = SCREEN_BROWSER;
 }
@@ -345,7 +348,37 @@ static void browser_scroll(FileBrowser *b) {
 }
 static void browser_select(App *a) {
     char picked[LAD_PATH_MAX];
-    if (browser_activate(&a->browser, picked, sizeof(picked))) choose_image(a, picked);
+    if (!browser_activate(&a->browser, picked, sizeof(picked))) return;
+    if (a->browse_target != 6) {
+        choose_image(a, picked);
+        return;
+    }
+    char feedback[112];
+    if (!lad_import_existing_vpk(picked, &a->cfg, feedback, sizeof(feedback))) {
+        set_status(a, feedback); return;
+    }
+    snprintf(a->vpk_source, sizeof(a->vpk_source), "%s", picked);
+    normalize(a);
+    load_texture(a, a->cfg.card_image, &a->card_texture);
+    load_texture(a, a->cfg.button_image, &a->button_texture);
+    load_texture(a, a->cfg.gate_image, &a->gate_texture);
+    reload_frame_previews(a);
+    a->settings_tab = 1;
+    a->screen = SCREEN_SETTINGS;
+    a->dirty = true;
+    set_status(a, feedback);
+}
+static void patch_selected_vpk(App *a) {
+    if (!a->vpk_source[0]) {
+        set_status(a, "OPEN AN EXISTING VPK FIRST"); return;
+    }
+    char feedback[112];
+    save(a);
+    if (!lad_write_modified_vpk(a->vpk_source, &a->cfg,
+                                feedback, sizeof(feedback))) {
+        set_status(a, feedback); return;
+    }
+    set_status(a, "SAVED: UX0:DATA/LIVEAREADESIGNER/EXPORT/MODIFIED_LIVEAREA.VPK");
 }
 static void select_manual_directory(App *a) {
     if (a->browse_target != 5 || !a->browser.cwd[0]) {
@@ -456,6 +489,8 @@ static void settings_confirm(App *a) {
         else if (a->setting_row <= 6) settings_adjust(a, 1);
         else if (a->setting_row == 8) open_browser(a, 5);
         else if (a->setting_row == 9) toggle_template_preview(a);
+        else if (a->setting_row == 10) open_browser(a, 6);
+        else if (a->setting_row == 11) patch_selected_vpk(a);
         else {
             char message[112];
             save(a);
@@ -476,7 +511,7 @@ static void navigate(App *a, int dx, int dy, int step) {
     if (a->screen == SCREEN_EDITOR) {
         editor_adjust(a, dx, dy, step);
     } else if (a->screen == SCREEN_SETTINGS) {
-        if (dy) a->setting_row = clampi(a->setting_row + dy, 0, a->settings_tab ? 9 : 4);
+        if (dy) a->setting_row = clampi(a->setting_row + dy, 0, a->settings_tab ? 11 : 4);
         else if (dx) settings_adjust(a, dx);
     } else if (dy) {
         a->browser.selected = clampi(a->browser.selected + dy, 0,
@@ -490,6 +525,12 @@ static void pointer_down(App *a, int x, int y) {
             a->settings_tab = !a->settings_tab; a->setting_row = 0; return;
         }
         if (a->settings_tab) {
+            if (hit(x, y, (Rect){524, 414, 184, 30})) {
+                a->setting_row = 10; open_browser(a, 6); return;
+            }
+            if (hit(x, y, (Rect){716, 414, 186, 30})) {
+                a->setting_row = 11; patch_selected_vpk(a); return;
+            }
             if (a->cfg.preview_template && hit(x, y, (Rect){524, 150, 378, 225})) {
                 const LadTemplateLayout *layout = lad_template_layout(a->cfg.template_style);
                 const Rect card = {524, 150, 378, 225};
@@ -995,13 +1036,13 @@ static void draw_settings_export(App *a) {
     label(a, 269, 464, a->cfg.preview_template ?
           "PREVIEW TEMPLATE: ON" : "PREVIEW TEMPLATE: OFF", 1, TEXT, 0);
 
-    label(a, 524, 112, "FRAME IMAGE / CLICKABLE LINK", 2, TEXT, 0);
+    label(a, 524, 112, "LIVEAREA / FRAME PREVIEW", 2, TEXT, 0);
     draw_card(a, (Rect){524, 150, 378, 225}, false);
     snprintf(line, sizeof(line), "CENTER X:%d Y:%d W:%d H:%d",
              lad_center_x(&a->cfg), lad_center_y(&a->cfg), a->cfg.w, a->cfg.h);
     label(a, 524, 389, line, 2, GOLD, 33);
-    label(a, 524, 412, "GATE AND FRAME POSITIONS ARE APPROXIMATE", 1, MUTED, 0);
-    label(a, 524, 430, "TARGET URI: EDIT SETTINGS.INI ON UX0", 1, MUTED, 0);
+    action_button(a, (Rect){524, 414, 184, 30}, "OPEN VPK", a->setting_row == 10);
+    action_button(a, (Rect){716, 414, 186, 30}, "PATCH VPK", a->setting_row == 11);
     action_button(a, (Rect){524, 450, 380, 39}, "SELECT MANUAL FOLDER", a->setting_row == 8);
     if (SDL_TICKS_PASSED(a->message_until, SDL_GetTicks()))
         label(a, 524, 493, a->message, 1, GOLD, 72);
@@ -1013,7 +1054,7 @@ static void draw_settings(App *a) {
     outline(r, (Rect){28, 44, 904, 450}, MUTED);
     label(a, 52, 63, "SETTINGS", 3, TEXT, 0);
     label(a, 584, 70, a->settings_tab ?
-          "L/R: [XML + ASSETS] / COLORS" : "L/R: [COLORS] / XML + ASSETS",
+          "TEMPLATE + VPK  /  L/R: IMAGES" : "IMAGES  /  L/R: TEMPLATE",
           2, GOLD, 0);
     if (a->settings_tab) {
         draw_settings_export(a);
@@ -1075,10 +1116,11 @@ static void draw_browser(App *a) {
     box(r, (Rect){24, 44, 912, 448}, (SDL_Color){23, 29, 52, 255}, 255);
     outline(r, (Rect){24, 44, 912, 448}, MUTED);
     static const char *headings[] = {
-        "SELECT CARD IMAGE", "SELECT BUTTON IMAGE", "SELECT GATE IMAGE",
-        "SELECT ICON0 IMAGE", "SELECT PIC0 IMAGE", "CHOOSE MANUAL DIRECTORY"
+        "SELECT CARD IMAGE", "SELECT FRAME IMAGE", "SELECT GATE IMAGE",
+        "SELECT ICON0 IMAGE", "SELECT PIC0 IMAGE", "CHOOSE MANUAL DIRECTORY",
+        "OPEN EXISTING VPK (READ ONLY)"
     };
-    label(a, 41, 61, headings[clampi(a->browse_target, 0, 5)], 3, TEXT, 0);
+    label(a, 41, 61, headings[clampi(a->browse_target, 0, 6)], 3, TEXT, 0);
     action_button(a, (Rect){762, 63, 154, 37}, "GO BACK", false);
 
     const char *path = a->browser.cwd[0] ? a->browser.cwd : "CHOOSE STORAGE";
@@ -1098,7 +1140,9 @@ static void draw_browser(App *a) {
         label(a, 142, y + 6, entry->name, 2, TEXT, 63);
     }
     if (a->browser.count == 0)
-        label(a, 50, 162, "NO DIRECTORIES OR PNG/JPG FILES", 2, MUTED, 0);
+        label(a, 50, 162, a->browser.filter_vpk ?
+              "NO DIRECTORIES OR VPK FILES" : "NO DIRECTORIES OR PNG/JPG FILES",
+              2, MUTED, 0);
     if (a->browser.error[0])
         label(a, 43, 474, a->browser.error, 1, GOLD, 100);
     else if (SDL_TICKS_PASSED(a->message_until, SDL_GetTicks()))
@@ -1177,6 +1221,7 @@ int main(int argc, char **argv) {
     if (!a) { IMG_Quit(); SDL_Quit(); return 2; }
     designer_load(&a->cfg);
     normalize(a);
+    a->settings_tab = 1; /* Artwork/frames are primary; palette is optional. */
     a->window = SDL_CreateWindow("LiveArea Designer",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SW, SH, SDL_WINDOW_SHOWN);
     if (a->window) a->renderer =

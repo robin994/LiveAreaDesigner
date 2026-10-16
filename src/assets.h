@@ -55,6 +55,7 @@ typedef struct {
 
 typedef struct {
     char cwd[LAD_PATH_MAX]; /* Empty means the device-selection screen. */
+    int filter_vpk;
     BrowserEntry items[LAD_ITEMS_MAX];
     int count;
     int selected;
@@ -70,6 +71,7 @@ void designer_store_active_frame(DesignerConfig *cfg);
 void designer_load_active_frame(DesignerConfig *cfg, int style, int id,
                                 const DesignerFrame *fallback);
 bool lad_is_image(const char *name);
+bool lad_is_vpk(const char *name);
 
 void browser_root(FileBrowser *browser);
 bool browser_directory(FileBrowser *browser, const char *path);

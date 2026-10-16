@@ -26,6 +26,10 @@ bool lad_is_image(const char *name) {
            ci_cmp(ext, ".jpg") == 0 ||
            ci_cmp(ext, ".jpeg") == 0;
 }
+bool lad_is_vpk(const char *name) {
+    const char *ext = strrchr(name, '.');
+    return ext && ci_cmp(ext, ".vpk") == 0;
+}
 
 void designer_defaults(DesignerConfig *cfg) {
     memset(cfg, 0, sizeof(*cfg));
@@ -274,7 +278,9 @@ bool browser_directory(FileBrowser *b, const char *path) {
         if (strcmp(ent.d_name, ".") == 0 || strcmp(ent.d_name, "..") == 0)
             continue;
         bool is_dir = SCE_S_ISDIR(ent.d_stat.st_mode);
-        if (is_dir || lad_is_image(ent.d_name)) add_entry(b, ent.d_name, is_dir);
+        if (is_dir || (b->filter_vpk ? lad_is_vpk(ent.d_name) :
+                       lad_is_image(ent.d_name)))
+            add_entry(b, ent.d_name, is_dir);
     }
     sceIoDclose(fd);
     if (b->count > 1) qsort(b->items, (size_t)b->count, sizeof(b->items[0]), entry_cmp);

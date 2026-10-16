@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=1.23">
-  <script type="module" src="./app.js?v=1.23"></script>
+  <link rel="stylesheet" href="./styles.css?v=1.24">
+  <script type="module" src="./app.js?v=1.24"></script>
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -23,11 +23,11 @@
       <span class="brand-name">LIVEAREA <strong>DESIGNER</strong><small>PS VITA DESIGN TOOL</small></span>
     </a>
     <div class="header-right">
-      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.23</span>
+      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.24</span>
       <a class="header-link" href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">
         GitHub <span aria-hidden="true">↗</span>
       </a>
-      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.23" target="_blank" rel="noopener noreferrer">
+      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.24" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 17v3h16v-3"/></svg>
         Download VPK
       </a>
@@ -39,12 +39,12 @@
       <div>
         <div class="eyebrow"><span class="eyebrow-line"></span> WORKSPACE / 001 <span class="eyebrow-bullet"></span> PLAYSTATION VITA</div>
         <h1>Your LiveArea.<br><em>Pixel perfect.</em></h1>
-        <p>Design cards and buttons, import your own images, and fine-tune every offset. See every change in real time, right in your browser.</p>
+        <p>Edit LiveArea frames, preview instantly, and export assets or patch a VPK.</p>
       </div>
       <div class="intro-facts" aria-label="Simulator specifications">
         <div class="fact"><span>RESOLUTION</span><strong>960 <i>×</i> 544</strong></div>
         <div class="fact"><span>CARD AREA</span><strong>840 <i>×</i> 500</strong></div>
-        <div class="fact"><span>UNITS</span><strong>PIXELS / PX</strong></div>
+        <div class="fact"><span>FRAMES</span><strong>RCO LAYOUTS</strong></div>
       </div>
     </div>
 
@@ -55,7 +55,6 @@
             <div class="overline">01 / SIMULATOR</div>
             <h2 id="preview-heading">LiveArea Preview <span class="section-count">01</span></h2>
           </div>
-          <div class="hint-pill"><span class="pulse"></span> LIVE UPDATES</div>
         </div>
 
         <div class="preview-shell">
@@ -91,17 +90,15 @@
             <span class="screen-corner screen-corner-br" aria-hidden="true"></span>
           </div>
           <div class="preview-bottom">
-            <div class="help-copy"><span class="pointer-symbol" aria-hidden="true">↗</span> In Template Preview, choose a frame and edit its own liveitem. Drag the content or its yellow resize handle.</div>
-            <span class="keyboard-tip">ARROWS <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> <small>SHIFT × 10</small></span>
+            <div class="help-copy">Select a frame · Drag to move · Yellow corner to resize</div>
           </div>
           <div id="template-preview-details" class="template-preview-details" hidden>
-            <span class="template-preview-badge">FIRMWARE GEOMETRY</span>
             <span id="template-preview-summary" aria-live="polite">Style a1 · frame3 · centered gate</span>
             <div class="template-preview-actions">
               <span id="template-frame-offsets" aria-live="polite">Frame offsets: X 0 · Y 0</span>
               <button type="button" id="fit-template-frame">Fit image to selected frame</button>
             </div>
-            <p id="template-fit-warning">System frame slots remain fixed. Each frame has independent artwork, link, text, size and position; select one and upload its own image.</p>
+            <p id="template-fit-warning" hidden></p>
           </div>
         </div>
 
@@ -115,6 +112,10 @@
         </div>
 
         <div class="editor-actions">
+          <button id="download-package" class="action-primary" type="button">Export LiveArea Assets (.zip)</button>
+          <details class="auxiliary-tools">
+            <summary>More tools</summary>
+            <div class="auxiliary-buttons">
           <button id="export-preview" class="action-primary" type="button">
             <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 17v3h14v-3"/></svg>
             Export PNG Preview
@@ -124,9 +125,21 @@
             Copy Coordinates
           </button>
           <button id="download-template" class="action-secondary" type="button">Download template.xml</button>
-          <button id="download-package" class="action-primary" type="button">Export LiveArea Assets (.zip)</button>
           <button id="reset-geometry" class="action-reset" type="button">Reset Position <span aria-hidden="true">↺</span></button>
+            </div>
+          </details>
         </div>
+        <section class="vpk-panel" aria-label="Open and modify a VPK">
+          <div>
+            <strong>Edit an existing VPK</strong>
+            <p id="vpk-status" aria-live="polite">Open a VPK to import its LiveArea; the original will remain unchanged.</p>
+          </div>
+          <div class="vpk-actions">
+            <button type="button" class="action-secondary" id="open-vpk">Open VPK…</button>
+            <button type="button" class="action-primary" id="save-vpk" disabled>Export modified VPK</button>
+            <input id="vpk-file" type="file" accept=".vpk,application/zip" hidden>
+          </div>
+        </section>
       </section>
 
       <aside class="inspector" aria-labelledby="settings-heading">
@@ -136,7 +149,7 @@
             <h2 id="settings-heading">Settings</h2>
             <span class="inspector-glyph" aria-hidden="true">⚙</span>
           </div>
-          <p>Every change appears instantly in the preview.</p>
+          <p>Select a frame to edit its content.</p>
         </div>
 
         <section class="inspector-section" aria-labelledby="assets-title">
@@ -202,11 +215,12 @@
               <p class="section-note">Up to 10 pages. Exported as sce_sys/manual/001.png, 002.png, etc.</p>
             </div>
           </details>
-          <p class="section-note">Drag and drop files here, or select them from your device. Transparent PNGs supported; up to 2048 × 2048 px and 12 MiB per image.</p>
         </section>
 
-        <section class="inspector-section" aria-labelledby="colors-title">
-          <div class="subhead"><span class="sub-number">02</span><h3 id="colors-title">Preset Colors</h3><span class="sub-rule"></span></div>
+        <details class="advanced-collapse" id="appearance-options">
+          <summary>Advanced appearance <small>Background color fallback</small></summary>
+          <section class="inspector-section" aria-labelledby="colors-title">
+          <div class="subhead"><h3 id="colors-title">Fallback colors</h3><span class="sub-rule"></span></div>
           <div class="palette-group">
             <div class="palette-heading"><label id="palette-card-label">Card background</label><output id="card-color-name">Purple</output></div>
             <div class="swatches" id="card-palette" role="group" aria-labelledby="palette-card-label"></div>
@@ -215,12 +229,11 @@
             <div class="palette-heading"><label id="palette-button-label">Selected frame background</label><output id="button-color-name">Magenta</output></div>
             <div class="swatches" id="button-palette" role="group" aria-labelledby="palette-button-label"></div>
           </div>
-          <p class="section-note">Each frame keeps its own background color and transparency. Changing frames restores its saved settings and image.</p>
-        </section>
+          </section>
+        </details>
 
         <section class="inspector-section inspector-geometry" aria-labelledby="geometry-title">
           <div class="subhead"><span class="sub-number">03</span><h3 id="geometry-title">Geometry</h3><span class="sub-rule"></span></div>
-          <p class="geometry-caption">Edit the selected frame's liveitem: X/Y are relative to the card center; the exported XML uses the native frame center. Native frame slots cannot be moved.</p>
           <div class="geometry-inputs">
             <label class="field"><span>X <small>FROM CENTER</small></span><div class="input-container"><input id="input-x" type="number" min="-420" max="420" step="1" inputmode="numeric" value="-1"><span>px</span></div></label>
             <label class="field"><span>Y <small>FROM CENTER</small></span><div class="input-container"><input id="input-y" type="number" min="-250" max="250" step="1" inputmode="numeric" value="-54"><span>px</span></div></label>
@@ -241,17 +254,23 @@
             <label class="field"><span>LIVEITEM FRAME</span><select id="xml-frame"><option value="1">frame1</option><option value="2">frame2</option><option value="3">frame3</option></select></label>
             <label class="field"><span>LINK TARGET (URL / VITA URI)</span><input id="xml-target" type="text" maxlength="240" value="https://example.com" spellcheck="false"></label>
             <label class="field"><span>OPTIONAL FRAME TEXT</span><input id="xml-text" type="text" maxlength="160" placeholder="Optional text"></label>
-            <label class="field"><span>LANGUAGE</span><select id="xml-lang"><option value="">All languages</option><option value="en">English</option><option value="ja">Japanese</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">German</option><option value="it">Italian</option><option value="pt">Portuguese</option><option value="ko">Korean</option><option value="ru">Russian</option></select></label>
-            <label class="field"><span>AGE LIMIT</span><input id="xml-age" type="number" min="0" max="18" value="0" inputmode="numeric"></label>
           </div>
-          <label class="editor-check"><input id="xml-vita-only" type="checkbox"><span>Restrict this liveitem to PS Vita <small>Include model=vita</small></span></label>
-          <label class="editor-check"><input id="xml-autoflip" type="checkbox"><span>Frame autoflip <small>Useful when adding multiple liveitems manually</small></span></label>
-          <p class="section-note">Frame slots and gate centers are measured from the Vita firmware's layout hints. The editor keeps card-centered X/Y for positioning, and exports <strong>frame-relative X/Y</strong> in template.xml. System graphics are illustrative. Test the exported result on hardware.</p>
-          <button id="download-package-side" type="button" class="asset-upload export-side">Export template.xml + Vita PNGs (.zip)</button>
+          <details class="advanced-collapse">
+            <summary>Advanced template settings</summary>
+            <div class="xml-settings">
+              <label class="field"><span>LANGUAGE</span><select id="xml-lang"><option value="">All languages</option><option value="en">English</option><option value="ja">Japanese</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">German</option><option value="it">Italian</option><option value="pt">Portuguese</option><option value="ko">Korean</option><option value="ru">Russian</option></select></label>
+              <label class="field"><span>AGE LIMIT</span><input id="xml-age" type="number" min="0" max="18" value="0" inputmode="numeric"></label>
+            </div>
+            <label class="editor-check"><input id="xml-vita-only" type="checkbox"><span>PS Vita only</span></label>
+            <label class="editor-check"><input id="xml-autoflip" type="checkbox"><span>Autoflip</span></label>
+          </details>
+          <label class="editor-check export-compression"><input id="optimize-png" type="checkbox" checked>
+            <span>Optimize PNG8 images <small>Compact palette + adaptive PNG filters + zlib (recommended)</small></span></label>
+          <button id="download-package-side" type="button" class="asset-upload export-side">Export PNG8 assets + XML (.zip)</button>
         </section>
         <div class="storage-note">
           <div class="storage-indicator"><span class="storage-light"></span><strong id="storage-status">Saved in this browser</strong></div>
-          <p>Your project is stored on this device only. Images are never uploaded to a server.</p>
+          <p>Local processing only. VPKs and images are never uploaded.</p>
         </div>
       </aside>
     </div>

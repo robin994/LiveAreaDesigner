@@ -639,6 +639,79 @@ try {
   assert.notDeepEqual(frameOnePng, frameTwoPng, "Different frame artwork must produce different PNG assets");
   console.log("PASS: independent frame images, geometry, XML and 5-frame ZIP persisted after reload");
 
+  // Verify the browser's actual Open VPK -> Edit -> Export modified VPK UI
+  // using a complete test archive with executable + unrelated game data.
+  const pngSizeComparison = await evaluate(`(async () => {
+    const { encodeIndexedPng } = await import("./package.mjs");
+    const rgba = new Uint8ClampedArray(200 * 160 * 4);
+    for (let i = 0; i < rgba.length; i += 4) {
+      rgba[i] = 38; rgba[i + 1] = 68; rgba[i + 2] = 138; rgba[i + 3] = 255;
+    }
+    const legacy = await encodeIndexedPng(200, 160, rgba, false, {optimize: false});
+    const optimized = await encodeIndexedPng(200, 160, rgba, false, {optimize: true});
+    return { legacy: legacy.length, optimized: optimized.length,
+      depth: optimized[24], color: optimized[25] };
+  })()`);
+  assert.ok(pngSizeComparison.optimized < pngSizeComparison.legacy,
+    "Adaptive PNG8 compression should beat the legacy fixed palette on solid UI assets");
+  assert.equal(pngSizeComparison.depth, 8);
+  assert.equal(pngSizeComparison.color, 3);
+  console.log("PASS: optimized PNG8 stays Vita-compatible and saves bytes", pngSizeComparison);
+
+  await evaluate(`(async () => {
+    const { readZipArchive, readArchiveEntry } = await import("./vpk.mjs");
+    const { makeZip, buildLiveAreaPackage } = await import("./package.mjs");
+    const { DEFAULT_LAYOUT } = await import("./geometry.mjs");
+    const originalAssets = await readZipArchive(await buildLiveAreaPackage(
+      { ...DEFAULT_LAYOUT, templateStyle: "a2", frameId: 3, frameText: "ORIGINAL FRAME" },
+      { card: null, button: null, frames: {}, gate: null, icon: null, boot: null, manual: [] }
+    ));
+    const files = [
+      { name: "eboot.bin", data: new TextEncoder().encode("UNCHANGED_EBOOT_TEST_1234") },
+      { name: "sce_sys/param.sfo", data: "UNCHANGED_SFO_TEST" },
+      { name: "data/game.dat", data: "UNCHANGED_GAME_DATA" }
+    ];
+    for (const item of originalAssets.entries)
+      files.push({ name: item.name, data: await readArchiveEntry(originalAssets, item) });
+    const vpk = makeZip(files);
+    const file = new File([vpk], "smoke-existing.vpk", {type:"application/zip"});
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    const input = document.getElementById("vpk-file");
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate(
+    'document.getElementById("vpk-status").textContent.includes("smoke-existing.vpk") && !document.getElementById("save-vpk").disabled && document.getElementById("xml-style").value === "a2"'
+  ), "existing VPK import", 20000);
+  assert.equal(await evaluate('document.getElementById("card-filename").textContent'),
+    "bg0.png", "Import must restore the LiveArea background image");
+  assert.equal(await evaluate('document.getElementById("xml-style").value'), "a2");
+  assert.equal(await evaluate('document.getElementById("template-preview-state").textContent'), "ON");
+  await evaluate(`(() => {
+    const input = document.getElementById("xml-text");
+    input.value = "EDITED THROUGH VPK";
+    input.dispatchEvent(new Event("change", {bubbles:true}));
+    document.getElementById("save-vpk").click();
+  })()`);
+  const modifiedName = join(downloads, "smoke-existing-livearea.vpk");
+  await waitFor(async () => {
+    try { return (await readFile(modifiedName)).length > 1000; }
+    catch { return false; }
+  }, "modified VPK export", 20000);
+  execFileSync("unzip", ["-t", modifiedName]);
+  const modifiedSfo = execFileSync("unzip", ["-p", modifiedName, "sce_sys/param.sfo"]).toString();
+  const modifiedGame = execFileSync("unzip", ["-p", modifiedName, "data/game.dat"]).toString();
+  const modifiedEboot = execFileSync("unzip", ["-p", modifiedName, "eboot.bin"]).toString();
+  const modifiedTemplate = execFileSync("unzip", ["-p", modifiedName,
+    "sce_sys/livearea/contents/template.xml"]).toString();
+  assert.equal(modifiedSfo, "UNCHANGED_SFO_TEST");
+  assert.equal(modifiedGame, "UNCHANGED_GAME_DATA");
+  assert.equal(modifiedEboot, "UNCHANGED_EBOOT_TEST_1234");
+  assert.match(modifiedTemplate, /EDITED THROUGH VPK/);
+  assert.match(modifiedTemplate, /<livearea style="a2"/);
+  console.log("PASS: import/edit/patch VPK with original executable and game assets intact");
+
   await screenshot("desktop.png");
   await send("Emulation.setDeviceMetricsOverride", {
     width: 390, height: 844, deviceScaleFactor: 1, mobile: true,
@@ -661,6 +734,9 @@ try {
   assert.ok(pageState.canvasWidth > 300 && pageState.canvasWidth < 400);
   console.log("PASS: mobile layout without horizontal overflow");
 
+  await waitFor(() => evaluate(
+    '!document.getElementById("card-clear").disabled && document.getElementById("card-filename").textContent !== "No image selected"'
+  ), "restored imported card image before removal", 30000);
   await evaluate('document.querySelector("#card-clear").click()');
   await waitFor(() => evaluate('document.getElementById("card-filename").textContent === "No image selected"'), "asset removal");
   await waitFor(() => evaluate('document.getElementById("toast").textContent === "Card image removed."'), "English removal message");
