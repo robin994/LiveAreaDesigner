@@ -98,11 +98,13 @@ bool lad_write_template(FILE *out, const DesignerConfig *c) {
         "<livearea style=\"%s\" format-ver=\"01.00\" content-rev=\"1\">\n"
         "  <livearea-background>\n"
         "    <image>bg0.png</image>\n"
-        "  </livearea-background>\n"
-        "  <gate>\n"
-        "    <startup-image>startup.png</startup-image>\n"
-        "  </gate>\n",
+        "  </livearea-background>\n",
         styles[style]);
+    if (lad_template_layout(style)->has_gate) {
+        fputs("  <gate>\n"
+              "    <startup-image>startup.png</startup-image>\n"
+              "  </gate>\n", out);
+    }
     for (int frame = 1; frame <= max_frame; ++frame) {
         DesignerFrame item;
         lad_resolve_frame(c, frame, &item);

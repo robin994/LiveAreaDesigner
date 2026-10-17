@@ -498,6 +498,11 @@ static void settings_confirm(App *a) {
             settings_adjust(a, 1);
         else settings_close(a);
     } else {
+        if (a->setting_row == 0 &&
+            !lad_template_layout(a->cfg.template_style)->has_gate) {
+            set_status(a, "THIS LAYOUT HAS NO STARTUP GATE");
+            return;
+        }
         if (a->setting_row >= 0 && a->setting_row <= 2)
             open_browser(a, a->setting_row + 2);
         else if (a->setting_row <= 6) settings_adjust(a, 1);
@@ -541,6 +546,11 @@ static void pointer_down(App *a, int x, int y) {
             a->settings_tab = !a->settings_tab; a->setting_row = 0; return;
         }
         if (a->settings_tab) {
+            if (!lad_template_layout(a->cfg.template_style)->has_gate &&
+                hit(x, y, (Rect){284, 106, 110, 35})) {
+                set_status(a, "THIS LAYOUT HAS NO STARTUP GATE");
+                return;
+            }
             if (hit(x, y, (Rect){710, 108, 93, 31})) {
                 a->setting_row = 12; settings_confirm(a); return;
             }
@@ -1030,7 +1040,10 @@ static void draw_settings_export(App *a) {
     label(a, 52, 96, "PNG8 EXPORT - SCE_SYS / LIVEAREA / CONTENTS", 1, MUTED, 0);
     for (int i = 0; i < 3; ++i) {
         if (a->setting_row == i) outline(r, (Rect){46, item_y[i] - 3, 428, 69}, GOLD);
-        label(a, 57, item_y[i] + 10, titles[i], 2, TEXT, 0);
+        label(a, 57, item_y[i] + 10,
+              i == 0 && !lad_template_layout(a->cfg.template_style)->has_gate ?
+                  "NO STARTUP GATE FOR THIS STYLE" : titles[i],
+              2, TEXT, 0);
         action_button(a, (Rect){284, item_y[i], 110, 35}, "BROWSE", a->setting_row == i);
         action_button(a, (Rect){397, item_y[i], 76, 35}, "CLEAR", false);
         label(a, 57, item_y[i] + 40, file_basename(filepaths[i]), 1, MUTED, 64);

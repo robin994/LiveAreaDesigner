@@ -47,6 +47,18 @@ int main(void) {
     assert(strstr(xml, "<livearea style=\"a1\" format-ver=\"01.00\"") != NULL);
     assert(strstr(xml, "<image>bg0.png</image>") != NULL);
     assert(strstr(xml, "<startup-image>startup.png</startup-image>") != NULL);
+    cfg.template_style = 5; /* ad0 has no gate. */
+    FILE *ungated = tmpfile();
+    assert(ungated && lad_write_template(ungated, &cfg));
+    rewind(ungated);
+    char ad0_xml[8192] = {0};
+    assert(fread(ad0_xml, 1, sizeof(ad0_xml) - 1, ungated) > 100);
+    fclose(ungated);
+    assert(strstr(ad0_xml, "style=\"ad0\"") != NULL);
+    assert(strstr(ad0_xml, "<gate>") == NULL);
+    assert(strstr(ad0_xml, "startup") == NULL);
+    assert(strstr(ad0_xml, "<frame id=\"frame1\"") != NULL);
+    cfg.template_style = 0;
     assert(strstr(xml, "width=\"286\" height=\"168\" x=\"-1\" y=\"225\"") != NULL);
     assert(strstr(xml, "frame1.png") != NULL);
     assert(strstr(xml, "frame2.png") != NULL);

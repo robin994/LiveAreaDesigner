@@ -1,6 +1,7 @@
-import { normalizeLayout } from "./geometry.mjs?v=1.27";
-import { frameRelativeOffsets } from "./template-preview.mjs?v=1.27";
-import { allFrameLayouts } from "./frame-model.mjs?v=1.27";
+import { normalizeLayout } from "./geometry.mjs?v=1.28";
+import { frameRelativeOffsets } from "./template-preview.mjs?v=1.28";
+import { allFrameLayouts } from "./frame-model.mjs?v=1.28";
+import { getRcoLayout } from "./template-slots.mjs?v=1.28";
 
 function escapeXml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -23,11 +24,13 @@ export function generateTemplate(layoutInput, frameLayouts = {}) {
     `<livearea style="${layout.templateStyle}" format-ver="01.00" content-rev="1">`,
     "  <livearea-background>",
     "    <image>bg0.png</image>",
-    "  </livearea-background>",
-    "  <gate>",
-    "    <startup-image>startup.png</startup-image>",
-    "  </gate>"
+    "  </livearea-background>"
   ];
+  // ad0 (and other gate-less RCO styles) have no gate at all. Do not emit a
+  // dangling startup-image reference that the Vita shell cannot display.
+  if (getRcoLayout(layout.templateStyle).gate !== null) {
+    xml.push("  <gate>", "    <startup-image>startup.png</startup-image>", "  </gate>");
+  }
   for (const item of allFrameLayouts(layout, frameLayouts)) {
     const { x, y } = frameRelativeOffsets(item);
     xml.push(

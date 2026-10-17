@@ -1,5 +1,6 @@
 #include "exporter.h"
 #include "template_slots.h"
+#include "quantize.h"
 
 #include <SDL.h>
 #include <SDL_image.h>
@@ -25,70 +26,91 @@ static void set_error(char *error, size_t size, const char *description) {
     if (size) snprintf(error, size, "%s", description);
 }
 
-static bool encode_png8(SDL_Surface *src, const char *filename, bool alpha) {
+static bool encode_png8(SDL_Surface *src, const char *filename, bool alpha,
+                        int max_colors, float dither, bool full_palette) {
+    const size_t bytes = (size_t)src->w * src->h * 4;
+    uint8_t *rgba = (uint8_t *)malloc(bytes);
+    if (!rgba) return false;
+    if (SDL_MUSTLOCK(src) && SDL_LockSurface(src) != 0) {
+        free(rgba);
+        return false;
+    }
+    for (int y = 0; y < src->h; y++) {
+        uint8_t *dest = rgba + (size_t)y * src->w * 4;
+        const uint8_t *row = (const uint8_t *)src->pixels + y * src->pitch;
+        if (src->format->format == SDL_PIXELFORMAT_RGBA32) {
+            memcpy(dest, row, (size_t)src->w * 4);
+        } else {
+            for (int x = 0; x < src->w; x++) {
+                Uint8 r, g, b, a;
+                Uint32 pixel;
+                memcpy(&pixel, row + x * 4, sizeof(pixel));
+                SDL_GetRGBA(pixel, src->format, &r, &g, &b, &a);
+                dest[x * 4] = r; dest[x * 4 + 1] = g;
+                dest[x * 4 + 2] = b; dest[x * 4 + 3] = a;
+            }
+        }
+    }
+    if (SDL_MUSTLOCK(src)) SDL_UnlockSurface(src);
+    LadIndexed indexed = {0};
+    const bool quantized = lad_quantize_rgba(rgba, src->w, src->h,
+                                             alpha, max_colors, dither, &indexed);
+    free(rgba);
+    if (!quantized) return false;
+    png_bytep *rows = (png_bytep *)malloc(sizeof(*rows) * (size_t)src->h);
     FILE *file = fopen(filename, "wb");
-    if (!file) return false;
+    if (!rows || !file) {
+        free(rows);
+        if (file) fclose(file);
+        lad_indexed_free(&indexed);
+        return false;
+    }
+    for (int y = 0; y < src->h; y++)
+        rows[y] = indexed.indices + (size_t)y * src->w;
     png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    if (!png) { fclose(file); return false; }
+    if (!png) {
+        fclose(file);
+        free(rows);
+        lad_indexed_free(&indexed);
+        return false;
+    }
     png_infop info = png_create_info_struct(png);
-    if (!info) { png_destroy_write_struct(&png, NULL); fclose(file); return false; }
-
-    unsigned char *pixels = NULL;
-    png_bytep *rows = NULL;
+    if (!info) {
+        png_destroy_write_struct(&png, NULL);
+        fclose(file);
+        free(rows);
+        lad_indexed_free(&indexed);
+        return false;
+    }
     bool success = false;
-    if (setjmp(png_jmpbuf(png))) goto done;
-
+    if (setjmp(png_jmpbuf(png))) goto cleanup;
     png_init_io(png, file);
-    /* PNG8 already uses a quantized palette; stronger zlib + adaptive filters
-       shrink the output without further changing pixel colors or alpha. */
     png_set_compression_level(png, Z_BEST_COMPRESSION);
     png_set_filter(png, PNG_FILTER_TYPE_BASE, PNG_ALL_FILTERS);
     png_set_IHDR(png, info, (png_uint_32)src->w, (png_uint_32)src->h, 8,
                  PNG_COLOR_TYPE_PALETTE, PNG_INTERLACE_NONE,
                  PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
-    png_color colors[225];
-    memset(colors, 0, sizeof(colors));
-    for (int r = 0; r < 7; ++r) for (int g = 0; g < 8; ++g)
-        for (int b = 0; b < 4; ++b) {
-            const int idx = 1 + (r * 8 + g) * 4 + b;
-            colors[idx].red = (png_byte)((r * 255 + 3) / 6);
-            colors[idx].green = (png_byte)((g * 255 + 3) / 7);
-            colors[idx].blue = (png_byte)((b * 255 + 1) / 3);
-        }
-    png_set_PLTE(png, info, colors, 225);
+    png_color colors[256] = {{0}};
+    for (int i = 0; i < indexed.colors; i++) {
+        colors[i].red = indexed.rgb[i][0];
+        colors[i].green = indexed.rgb[i][1];
+        colors[i].blue = indexed.rgb[i][2];
+    }
+    /* The Vita bootscreen is unusually picky: give pic0 a full 256-entry
+       PNG8 PLTE even when its image actually uses fewer colors. */
+    png_set_PLTE(png, info, colors, full_palette ? 256 : indexed.colors);
     if (alpha) {
         const png_byte transparent = 0;
         png_set_tRNS(png, info, (png_bytep)&transparent, 1, NULL);
     }
-
-    pixels = (unsigned char *)malloc((size_t)src->w * src->h);
-    rows = (png_bytep *)malloc(sizeof(png_bytep) * (size_t)src->h);
-    if (!pixels || !rows) goto done;
-    for (int y = 0; y < src->h; ++y) rows[y] = pixels + (size_t)y * src->w;
-
-    if (SDL_MUSTLOCK(src) && SDL_LockSurface(src) != 0) goto done;
-    for (int y = 0; y < src->h; ++y) {
-        const Uint32 *row = (const Uint32 *)((const Uint8 *)src->pixels + y * src->pitch);
-        for (int x = 0; x < src->w; ++x) {
-            Uint8 red, green, blue, opacity;
-            SDL_GetRGBA(row[x], src->format, &red, &green, &blue, &opacity);
-            if (alpha && opacity < 128) { rows[y][x] = 0; continue; }
-            const int cr = (red * 6 + 127) / 255;
-            const int cg = (green * 7 + 127) / 255;
-            const int cb = (blue * 3 + 127) / 255;
-            rows[y][x] = (png_byte)(1 + (cr * 8 + cg) * 4 + cb);
-        }
-    }
-    if (SDL_MUSTLOCK(src)) SDL_UnlockSurface(src);
     png_write_info(png, info);
     png_write_image(png, rows);
     png_write_end(png, info);
     success = true;
-
-done:
-    free(rows);
-    free(pixels);
+cleanup:
     png_destroy_write_struct(&png, &info);
+    lad_indexed_free(&indexed);
+    free(rows);
     if (fclose(file) != 0) success = false;
     if (!success) remove(filename);
     return success;
@@ -117,8 +139,35 @@ static bool export_picture(const char *source, const char *output,
         }
         SDL_FreeSurface(image);
     }
-    bool ok = encode_png8(dst, output, transparent);
+    const char *basename = strrchr(output, '/');
+    basename = basename ? basename + 1 : output;
+    size_t max_size = 0;
+    if (strcmp(basename, "bg0.png") == 0 || strcmp(basename, "icon0.png") == 0)
+        max_size = 128 * 1024;
+    else if (strcmp(basename, "startup.png") == 0)
+        max_size = 64 * 1024;
+    else if (strcmp(basename, "pic0.png") == 0)
+        max_size = 256 * 1024;
+    const bool full_palette = strcmp(basename, "pic0.png") == 0;
+    const int color_steps[] = {256, 256, 192, 128, 96, 64, 32};
+    const float dither_steps[] = {.45f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+    bool ok = false;
+    for (unsigned int i = 0; i < sizeof(color_steps) / sizeof(color_steps[0]); i++) {
+        if (!encode_png8(dst, output, transparent,
+                         color_steps[i], dither_steps[i], full_palette))
+            break;
+        if (!max_size) { ok = true; break; }
+        FILE *result = fopen(output, "rb");
+        if (!result) break;
+        const int positioned = fseek(result, 0, SEEK_END);
+        const long size = positioned == 0 ? ftell(result) : -1;
+        fclose(result);
+        if (size < 0) break;
+        if ((size_t)size <= max_size) { ok = true; break; }
+        remove(output);
+    }
     SDL_FreeSurface(dst);
+    if (!ok) remove(output);
     return ok;
 }
 
@@ -182,9 +231,15 @@ bool lad_export_bundle(const DesignerConfig *cfg, char *error, size_t size) {
     }
 
     snprintf(filename, sizeof(filename), "%s/startup.png", CONTENTS_DIR);
-    if (!export_picture(cfg->gate_image, filename, 280, 158,
-                        palette[cfg->button_color], true)) {
-        set_error(error, size, "STARTUP.PNG EXPORT FAILED"); return false;
+    if (lad_template_layout(cfg->template_style)->has_gate) {
+        if (!export_picture(cfg->gate_image, filename, 280, 158,
+                            palette[cfg->button_color], true)) {
+            set_error(error, size, "STARTUP.PNG EXPORT FAILED"); return false;
+        }
+    } else {
+        /* Remove leftovers from an earlier gated style in the shared output
+           directory, so ad0 ZIP/VPK exports cannot pick up stale artwork. */
+        remove(filename);
     }
 
     const int total = lad_template_frame_count(cfg->template_style);

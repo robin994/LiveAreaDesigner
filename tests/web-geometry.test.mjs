@@ -196,6 +196,18 @@ test("RCOF firmware gate positions are distinct and mapped with Y positive upwar
   assert.match(summary.note, /Native frame\/gate geometry extracted/);
 });
 
+test("ad0 and other gate-less layouts emit no gate or startup-image", () => {
+  for (const style of ["ad0", "ad1", "ad2", "ad3", "ad4", "music"]) {
+    assert.equal(getRcoLayout(style).gate, null);
+    const xml = generateTemplate({ ...DEFAULT_LAYOUT, templateStyle: style, frameId: 1 });
+    assert.doesNotMatch(xml, /<gate>|<\/gate>|startup\.png|startup-image/);
+    assert.match(xml, /<livearea-background>/);
+    assert.match(xml, /<frame id="frame1"/);
+  }
+  const gated = generateTemplate({ ...DEFAULT_LAYOUT, templateStyle: "a1" });
+  assert.match(gated, /<gate>\s*<startup-image>startup\.png<\/startup-image>\s*<\/gate>/);
+});
+
 test("RCO frame geometry varies across a1-a5, with the correct fixed slot count", () => {
   const expected = {
     a1: [[-290, 34, 260, 260], [290, 34, 260, 260], [0, -171, 840, 150]],

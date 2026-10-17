@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.28 - 2026-10-18 (gate-less layouts and high-fidelity PNG8)
+
+- **ad0 XML fix:** no `<gate>`, no `<startup-image>`, and no `startup.png` in the freshly exported assets. Also applies to firmware-defined gate-less `ad1`-`ad4` and `music` layouts. The web editor hides irrelevant gate upload controls for those styles.
+- **Image quality fix:** replaced the old global 7x8x4 RGB palette with a **256-color adaptive palette**, weighted median cut, two refinement passes, and moderate, bounded Floyd-Steinberg dithering on both web and PS Vita.
+- **Exact reproduction** for source artwork with up to 256 unique opaque colors (255 when transparency needs a palette entry), without the previous red/green/blue rounding. Complex images now allocate colors according to actual image content.
+- **Compatibility:** retain non-interlaced indexed PNG8/zlib, transparent palette slot where requested, and full 256 palette slots for `pic0.png`. Common Vita asset size limits are enforced: bg0/icon0 128 KiB, startup 64 KiB and pic0 256 KiB. Compression first removes dithering at 256 colors, only then reduces palette size as needed; impossible inputs fail rather than silently exceeding the limit.
+- Web: adaptive PNG filters are compared to PNG filter-0, choosing the smaller lossless stream; automatic size-limit adjustments are reported during ZIP/VPK export. Processing remains fully offline without TinyPNG API calls or dependencies.
+- Added PNG decoding, 256-color exactness, alpha, gradient quality and size-limit regression tests alongside ad0 XML/ZIP and browser UI checks.
+
 ## v1.27 - 2026-10-16 (frame1 startup target)
 
 - New, previously unconfigured **frame1** liveitems now default to `psla:eboot` in every supported layout style.

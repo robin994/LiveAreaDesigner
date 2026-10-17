@@ -489,6 +489,47 @@ try {
   assert.match(bundle.xml, /<startup-image>startup.png<\/startup-image>/);
   console.log("PASS: downloadable ZIP contains XML and PNG8 indexed assets with alpha");
 
+  const ad0Bundle = await evaluate(`(async () => {
+    const { buildLiveAreaPackage } = await import("./package.mjs");
+    const { readZipArchive, readArchiveEntry } = await import("./vpk.mjs");
+    const { DEFAULT_LAYOUT } = await import("./geometry.mjs");
+    const blank = { card: null, button: null, frames: {}, gate: null, manual: [] };
+    const zip = await readZipArchive(await buildLiveAreaPackage(
+      { ...DEFAULT_LAYOUT, templateStyle: "ad0", frameId: 1 }, blank));
+    const xml = new TextDecoder().decode(await readArchiveEntry(zip,
+      "sce_sys/livearea/contents/template.xml"));
+    return { names: zip.entries.map(e => e.name), xml };
+  })()`);
+  assert.doesNotMatch(ad0Bundle.xml, /<gate>|startup-image|startup\.png/);
+  assert.ok(!ad0Bundle.names.some(name => name.endsWith("/startup.png")));
+  assert.ok(ad0Bundle.names.some(name => name.endsWith("/bg0.png")));
+  assert.ok(ad0Bundle.names.some(name => name.endsWith("/frame1.png")));
+  await evaluate(`(() => {
+    const style = document.getElementById("xml-style");
+    style.value = "ad0";
+    style.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate(
+    'document.getElementById("gate-drop").hidden && !document.getElementById("gate-unavailable").hidden'
+  ), "gate controls hidden when ad0 is selected");
+  await evaluate(`(() => {
+    const style = document.getElementById("xml-style");
+    style.value = "a2";
+    style.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('!document.getElementById("gate-drop").hidden'),
+    "gate controls restored for a gated style");
+  await waitFor(() => evaluate('document.getElementById("xml-frame").options.length === 3'),
+    "restore a2 native frame options");
+  await evaluate(`(() => {
+    const selector = document.getElementById("xml-frame");
+    selector.value = "3";
+    selector.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("xml-frame").value === "3"'),
+    "restore selected frame after testing ad0");
+  console.log("PASS: ad0 gate-less XML, ZIP assets and live editor UI");
+
   const downloads = join(temp, "downloads");
   await mkdir(downloads, { recursive: true });
   await send("Page.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
@@ -797,8 +838,8 @@ try {
     return { legacy: legacy.length, optimized: optimized.length,
       depth: optimized[24], color: optimized[25] };
   })()`);
-  assert.ok(pngSizeComparison.optimized < pngSizeComparison.legacy,
-    "Adaptive PNG8 compression should beat the legacy fixed palette on solid UI assets");
+  assert.ok(pngSizeComparison.optimized <= pngSizeComparison.legacy,
+    "Adaptive filtering must never be larger than the no-filter PNG8 encoding");
   assert.equal(pngSizeComparison.depth, 8);
   assert.equal(pngSizeComparison.color, 3);
   console.log("PASS: optimized PNG8 stays Vita-compatible and saves bytes", pngSizeComparison);

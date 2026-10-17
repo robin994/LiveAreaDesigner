@@ -397,13 +397,17 @@ bool lad_write_modified_vpk(const char *source, const DesignerConfig *cfg,
         return false;
     }
     const char *base = LAD_EXPORT_DIR "/sce_sys/livearea/contents/";
-    const char *files[] = {"template.xml", "bg0.png", "startup.png"};
+    const char *files[] = {"template.xml", "bg0.png"};
     int success = 1;
     for (unsigned int i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
         char out[600], in[600];
         snprintf(out, sizeof(out), CONTENTS "%s", files[i]);
         snprintf(in, sizeof(in), "%s%s", base, files[i]);
         if (!replace_entry(archive, out, in)) success = 0;
+    }
+    if (success && lad_template_layout(cfg->template_style)->has_gate) {
+        success = replace_entry(archive, CONTENTS "startup.png",
+                                LAD_EXPORT_DIR "/sce_sys/livearea/contents/startup.png");
     }
     const int count = lad_template_frame_count(cfg->template_style);
     for (int id = 1; success && id <= count; id++) {

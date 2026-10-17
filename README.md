@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — v1.27, automatic frame1 launch target, configurable X/Y signs, VPK editing, optimized PNG8 and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — v1.28, fidelity-first PNG8, gate-less ad0, VPK editing and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -16,7 +16,7 @@ LiveArea Designer helps homebrew authors prototype the images and layout of a PS
 - Optional fallback colors (under **Advanced appearance**) and precise frame offsets.
 - Choose one LiveArea style and frame, with optional target URI, text, language restriction, age limit, Vita-only model and autoflip (see notes below).
 - New frame1 liveitems default to the PS Vita executable target `psla:eboot`. Other frames keep their own independent targets, and existing custom targets are preserved.
-- Save **template.xml** and an accompanying export of **8-bit indexed PNG assets** (up to 225 palette entries including a transparent slot).
+- Save **template.xml** and an accompanying export of **8-bit indexed PNG assets** (adaptive palette with up to 256 entries, including a transparent slot where applicable).
 - Add optional **manual pages**, packaged in numerical order starting at `sce_sys/manual/001.png`.
 - **Preview Template** draws the firmware's real, fixed layout slots for **19 styles**. Every frame is visible; each can hold its **own PNG/JPG, coordinates, dimensions, colors, text and target**. Preview displays each liveitem directly within its slot without adding an unrelated global movable rectangle. The slot itself cannot move, but its liveitem can move/resize within it.
 
@@ -40,9 +40,13 @@ The web importer supports **non-encrypted, single-volume ZIP32 archives up to 51
 
 ### Image compression
 
-PNG assets were already compressed in older releases: LiveArea Designer converts them to **indexed 8-bit PNGs (PNG8) with zlib/DEFLATE**, using a Vita-compatible format. Version 1.24 adds **Optimize PNG8 images** (on by default): unused palette colors are removed and adaptive filters are used to improve zlib compression. This does not introduce additional precision loss compared with existing PNG8 export.
+**New in 1.28:** The old encoder mapped everything onto the same **7 x 8 x 4 RGB cube**, which made gradients and artwork visibly wrong. Both the web editor and the Vita app now build a **color palette tailored to each image** (weighted median-cut, refinement and controlled error diffusion). Artwork with **256 or fewer opaque colors** retains those exact RGB colors; more complex artwork gets an adaptive palette of up to 256. This is a locally implemented quality improvement inspired by the principles used by tools such as pngquant/TinyPNG; the app **does not call TinyPNG or upload images**.
 
-PNG8 conversion itself remains a **lossy quantization** of RGB colors with binary alpha (fully transparent/opaque); gradients and partial transparency may appear different. Imported, unchanged image bytes are preserved when patching a VPK if their dimensions and rendering properties remain compatible. ZIP/VPK containers need not additionally DEFLATE PNG files, as PNG's IDAT payload is already compressed.
+The exports stay **8-bit indexed, non-interlaced PNGs**, with lossless zlib/DEFLATE compression after the palette conversion. The web's **Optimize PNG8 file size** option compares adaptive PNG filters with filter-0 and uses whichever compresses better; turning it off does **not** restore the old harsh palette. The Vita uses libpng's adaptive filters and maximum zlib level. To meet common Vita shell size restrictions, exports first try 256 colors with mild dithering, then 256 colors without dithering, and **only then** smaller adaptive palettes where necessary. On web, any automatic downgrade is reported after export; images that still cannot fit fail with a descriptive error instead of shipping invalid oversized assets.
+
+Conservative size caps for the most restricted assets: **bg0.png 128 KiB, startup.png 64 KiB, icon0.png 128 KiB, pic0.png 256 KiB**. The bootscreen uses a full 256-entry PNG palette for compatibility even when fewer colors are needed.
+
+PNG8 conversion itself is **not mathematically lossless** if the image has more than 256 colors. Alpha in the current export is binary (transparent/opaque) rather than full partial transparency. Imported, unchanged image bytes are preserved when patching a VPK if dimensions and rendering properties are compatible. ZIP/VPK containers do not additionally need to DEFLATE PNGs, since IDAT is already compressed. A physical Vita install remains the final compatibility check.
 
 **Template preview:** click **Preview Template** above the canvas (or press **P**) to switch between the freeform editor and the RCO-based layout. Changing `Layout Style` changes the native frame layout and count (e.g. `a1` has 3 slots, `a3` has 5 and `a5` has 7). Click a frame to edit **that frame's own liveitem**: upload PNG/JPG using **FrameN image**, adjust size and position using the editor or Geometry inputs, change frame background, text and target in the inspector. The preview renders the selected image in the appropriate slot; other configured frames remain visible at the same time. The selected native frame has a gold outline, and editing handles act only on its liveitem. **Fit image to selected frame** centers/scales it into the slot. **Export PNG Preview** captures the active mode; settings and images survive refresh.
 
@@ -62,7 +66,7 @@ sce_sys/
     contents/
       template.xml
       bg0.png          # 840 x 500, indexed PNG8
-      startup.png      # 280 x 158, indexed PNG8 with transparency
+      startup.png      # ONLY for gate-capable styles, 280 x 158 indexed PNG8
       frame1.png       # independent PNG8 for native frame1
       frame2.png       # independent PNG8 for native frame2
       frame3.png       # independent PNG8 for native frame3
@@ -72,19 +76,19 @@ sce_sys/
     002.png
 ```
 
-A gate is fixed by the chosen LiveArea style. For example, `a1` centers the startup image; `psmobile` places it to the right. Other styles listed in the tutorial include system-specific layouts whose additional built-in functionality may not work for third-party homebrew.
+A gate is fixed by the chosen LiveArea style. For example, `a1` centers the startup image; `psmobile` places it to the right. **The `ad0` style has no startup gate:** its `template.xml` contains no `<gate>` or `<startup-image>`, and its exported assets do not include `startup.png`. The same behavior applies to the other gate-less styles (`ad1`-`ad4`, `music`). Selecting such a style hides the unnecessary gate upload in the web editor. Other styles may include system-specific functionality not available to third-party homebrew.
 
 The web app exports a liveitem for **every frame in the selected style**, together with an individual PNG8. Each frame can have a different link to a website or supported Vita URI, text, dimensions and transparent/preset-color background. Existing pre-v1.23 projects retain their original button artwork in the previously active frame.
 
 **Startup link:** newly created **frame1** defaults to `<target>psla:eboot</target>`, so its button launches the homebrew's executable. You can replace it with any supported Vita URI or URL, or clear it; existing imported VPK targets and saved frame1 customizations are not changed.
 
-PNG assets use a quantized indexed palette. Colors are approximated and alpha is binary (fully transparent or opaque) rather than full 8-bit per-pixel opacity. Optional `icon0.png` and `pic0.png` are exported only after an image is selected.
+PNG assets use an adaptive indexed palette rather than the previous fixed RGB levels. Alpha remains binary (fully transparent or opaque). Optional `icon0.png` and `pic0.png` are exported only after an image is selected.
 
 ## PS Vita native homebrew
 
 Install the `LIVAREA01.vpk` from [Releases](https://github.com/robin994/LiveAreaDesigner/releases). Title ID: `LIVAREA01`. A local config is saved to `ux0:data/LiveAreaDesigner/settings.ini`. Only the **front touchscreen** is accepted; the rear panel is ignored.
 
-The native **Template + VPK** Settings tab has **Open VPK** and **Patch VPK** controls. Browse to an existing homebrew VPK, import its basic LiveArea images/geometry, then adjust the frames and choose Patch VPK. The original VPK is never modified; the output is written to `ux0:data/LiveAreaDesigner/export/modified_livearea.vpk`. Only supported artwork/text/layout fields are imported; advanced multi-liveitem XML features are not retained. For large archives allow enough free disk space for a second complete VPK file. The native encoder automatically uses strong PNG8 zlib compression and adaptive filters. Keep your original VPK and validate the edited package on the console.
+The native **Template + VPK** Settings tab has **Open VPK** and **Patch VPK** controls. Browse to an existing homebrew VPK, import its basic LiveArea images/geometry, then adjust the frames and choose Patch VPK. The original VPK is never modified; the output is written to `ux0:data/LiveAreaDesigner/export/modified_livearea.vpk`. Only supported artwork/text/layout fields are imported; advanced multi-liveitem XML features are not retained. For large archives allow enough free disk space for a second complete VPK file. The native encoder uses an adaptive 256-color PNG8 palette, zlib and size-aware fallback. Keep your original VPK and validate the edited package on the console.
 
 ### Controls
 
@@ -137,7 +141,7 @@ frame.0.2.target=https://example.org/two
 ```text
 ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/template.xml
 ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/bg0.png
-ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/startup.png
+ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/startup.png  # gate-capable styles only
 ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/frame1.png
 ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/frame2.png
 ux0:data/LiveAreaDesigner/export/sce_sys/livearea/contents/frame3.png
@@ -159,13 +163,14 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (v1.27). RCO geometry is verified against the user's own Vita firmware, but the VPK editing workflow and newly exported XML/PNG8 assets still require end-to-end hardware testing.
+Output: `build/LIVAREA01.vpk` (v1.28). RCO geometry is verified against the user's own Vita firmware, but the VPK editing workflow and new adaptive PNG8 exports still require end-to-end hardware testing.
 
 Tests:
 
 ```sh
 node --test tests/web-geometry.test.mjs
 node --test tests/vpk-archive.test.mjs
+node --test tests/png-quality.test.mjs
 node tests/web-browser-smoke.mjs  # Requires Google Chrome
 mkdir -p build/host-test
 clang -std=c99 -Wall -Wextra -Werror -Isrc src/exporter_xml.c src/template_slots.c tests/exporter_xml_smoke.c -o build/host-test/exporter_xml_smoke
@@ -174,6 +179,8 @@ clang -std=c99 -Wall -Wextra -Werror -Itests/mocks -Isrc src/assets.c tests/asse
 (cd build/host-test && ./assets_smoke)
 clang -std=c99 -Wall -Wextra -Werror -Isrc src/template_preview.c src/template_slots.c tests/template_preview_smoke.c -o build/host-test/template_preview_smoke
 build/host-test/template_preview_smoke
+clang -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/quantize.c tests/quantize_smoke.c -lm -o build/host-test/quantize_smoke
+build/host-test/quantize_smoke
 ```
 
 ### Regenerating the RCO layout tables

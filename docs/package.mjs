@@ -1,6 +1,8 @@
-import { CARD, PALETTE } from "./geometry.mjs?v=1.27";
-import { generateTemplate } from "./template.mjs?v=1.27";
-import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.27";
+import { CARD, PALETTE } from "./geometry.mjs?v=1.28";
+import { generateTemplate } from "./template.mjs?v=1.28";
+import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.28";
+import { getRcoLayout } from "./template-slots.mjs?v=1.28";
+import { quantizeRgba } from "./quantizer.mjs?v=1.28";
 
 const encoder = new TextEncoder();
 const SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
@@ -40,65 +42,18 @@ function chunk(type, bytes) {
 }
 
 /**
- * Indexed 8-bit PNG with a fixed 224-color RGB palette plus a transparent entry.
- * PNGs built by browsers are usually 32-bit; indexed PNGs are more Vita-friendly.
- * Alpha values under 128 become fully transparent; others become opaque.
+ * Fidelity-first indexed PNG8: adaptive (image-specific) 256-color palette.
+ * PNG compression stays lossless after the palette conversion.
  */
 export async function encodeIndexedPng(width, height, rgba, allowTransparency = false,
-                                      { optimize = true } = {}) {
+                                      { optimize = true, colors = 256, dither = 0.45,
+                                        fullPalette = false } = {}) {
+  const { indices, palette, transparency } =
+    quantizeRgba(width, height, rgba, allowTransparency, { colors, dither });
+  const storedPalette = fullPalette && palette.length < 256 * 3 ?
+    new Uint8Array(256 * 3) : palette;
+  if (storedPalette !== palette) storedPalette.set(palette);
   const raw = new Uint8Array((width + 1) * height);
-  const basePalette = new Uint8Array(225 * 3);
-  // Index 0 is transparent. Indices 1..224 represent a 7x8x4 RGB palette.
-  for (let red = 0; red < 7; red++) {
-    for (let green = 0; green < 8; green++) {
-      for (let blue = 0; blue < 4; blue++) {
-        const idx = 1 + (red * 8 + green) * 4 + blue;
-        basePalette[idx * 3] = Math.round(red * 255 / 6);
-        basePalette[idx * 3 + 1] = Math.round(green * 255 / 7);
-        basePalette[idx * 3 + 2] = Math.round(blue * 255 / 3);
-      }
-    }
-  }
-  const indices = new Uint8Array(width * height);
-  const used = new Uint8Array(225);
-  if (allowTransparency) used[0] = 1;
-  for (let y = 0; y < height; y++) {
-    const row = y * (width + 1);
-    raw[row] = 0;
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
-      if (allowTransparency && rgba[i + 3] < 128) {
-        indices[y * width + x] = 0;
-        used[0] = 1;
-        continue;
-      }
-      const red = Math.round(rgba[i] * 6 / 255);
-      const green = Math.round(rgba[i + 1] * 7 / 255);
-      const blue = Math.round(rgba[i + 2] * 3 / 255);
-      const index = 1 + (red * 8 + green) * 4 + blue;
-      indices[y * width + x] = index;
-      used[index] = 1;
-    }
-  }
-  let palette = basePalette;
-  if (optimize) {
-    // Keep PNG8 (PS Vita compatible) while dropping unused palette entries.
-    // Only the index mapping changes; this does not introduce further color loss.
-    const translation = new Uint8Array(225);
-    let next = 0;
-    for (let original = 0; original < used.length; original++) {
-      if (!used[original]) continue;
-      translation[original] = next++;
-    }
-    palette = new Uint8Array(Math.max(1, next) * 3);
-    for (let original = 0; original < used.length; original++) {
-      if (used[original])
-        palette.set(basePalette.subarray(original * 3, original * 3 + 3),
-          translation[original] * 3);
-    }
-    for (let i = 0; i < indices.length; i++) indices[i] = translation[indices[i]];
-  }
-
   // PNG filter selection reduces the size of the zlib stream for typical
   // graphic/UI images; leave the legacy filter-0 variant as a fallback.
   function paeth(a, b, c) {
@@ -137,12 +92,25 @@ export async function encodeIndexedPng(width, height, rgba, allowTransparency = 
   }
   if (typeof CompressionStream !== "function")
     throw new Error("This browser cannot create Vita-compatible indexed PNGs.");
-  const stream = new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate"));
-  const compressed = new Uint8Array(await new Response(stream).arrayBuffer());
+  const compress = async input => {
+    const stream = new Blob([input]).stream().pipeThrough(new CompressionStream("deflate"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  };
+  let compressed = await compress(raw);
+  if (optimize) {
+    // PNG's adaptive filters are not always superior (e.g. flat-color
+    // images). Compare both lossless encodings instead of increasing size.
+    const unfiltered = new Uint8Array((width + 1) * height);
+    for (let y = 0; y < height; y++)
+      unfiltered.set(indices.subarray(y * width, (y + 1) * width),
+        y * (width + 1) + 1);
+    const direct = await compress(unfiltered);
+    if (direct.length < compressed.length) compressed = direct;
+  }
   const ihdr = concat([u32be(width), u32be(height), Uint8Array.of(8, 3, 0, 0, 0)]);
   return concat([
-    SIGNATURE, chunk("IHDR", ihdr), chunk("PLTE", palette),
-    ...(allowTransparency ? [chunk("tRNS", Uint8Array.of(0))] : []),
+    SIGNATURE, chunk("IHDR", ihdr), chunk("PLTE", storedPalette),
+    ...(transparency ? [chunk("tRNS", transparency)] : []),
     chunk("IDAT", compressed), chunk("IEND", new Uint8Array())
   ]);
 }
@@ -204,11 +172,41 @@ function artwork(width, height, background, source, transparent = false, placeho
   return context.getImageData(0, 0, width, height).data;
 }
 
+/** Encode an already-resized RGBA image inside the common Vita asset caps. */
+export async function encodeVitaPng(filename, w, h, rgba, transparency = false,
+                                    { optimize = true, warnings = [] } = {}) {
+  const base = filename.split("/").at(-1);
+  const maxBytes = ({ "bg0.png": 128 * 1024, "startup.png": 64 * 1024,
+    "icon0.png": 128 * 1024, "pic0.png": 256 * 1024 })[base] ?? Infinity;
+  // Try maximum-fidelity/dithered PNG first. Dither can cost more space than
+  // colors; removing it often meets SceShell's strict size limits while
+  // retaining the entire adaptive 256-color palette.
+  const variants = [{ colors: 256, dither: 0.45 }, { colors: 256, dither: 0 },
+    { colors: 192, dither: 0 }, { colors: 128, dither: 0 },
+    { colors: 96, dither: 0 }, { colors: 64, dither: 0 },
+    { colors: 32, dither: 0 }];
+  let png = null, chosen = variants[0];
+  for (const candidate of variants) {
+    const encoded = await encodeIndexedPng(w, h, rgba, transparency,
+      { ...candidate, optimize, fullPalette: base === "pic0.png" });
+    png = encoded;
+    chosen = candidate;
+    if (encoded.length <= maxBytes) break;
+  }
+  if (png.length > maxBytes) {
+    throw new Error(`${base} is ${Math.ceil(png.length / 1024)} KiB after PNG8 compression, over the ${maxBytes / 1024} KiB Vita limit. Reduce image complexity before exporting.`);
+  }
+  if (chosen !== variants[0]) {
+    warnings.push(`${base}: adapted PNG8 to ${chosen.colors} colors${chosen.dither ? " with dithering" : " without dithering"} for the Vita file-size limit.`);
+  }
+  return png;
+}
+
 async function addImage(entries, filename, w, h, color, image, transparency,
-                        placeholder = false, optimization = true) {
-  const png = await encodeIndexedPng(w, h,
-    artwork(w, h, color, image, transparency, placeholder), transparency,
-    { optimize: optimization });
+                        placeholder = false, optimization = true, warnings = []) {
+  const png = await encodeVitaPng(filename, w, h,
+    artwork(w, h, color, image, transparency, placeholder),
+    transparency, { optimize: optimization, warnings });
   entries.push({ name: filename, data: png });
 }
 
@@ -218,27 +216,30 @@ async function addImage(entries, filename, w, h, color, image, transparency,
  * selected real Vita layout; the editor cannot change fixed gate/frame slots.
  */
 export async function buildLiveAreaPackage(layout, images, frameLayouts = {},
-                                           { optimizeImages = true } = {}) {
+                                           { optimizeImages = true, warnings = [] } = {}) {
   const root = "sce_sys/livearea/contents/";
   const entries = [{ name: root + "template.xml", data: generateTemplate(layout, frameLayouts) }];
   await addImage(entries, root + "bg0.png", CARD.width, CARD.height,
-    PALETTE[layout.cardColor].hex, images.card, false, false, optimizeImages);
-  await addImage(entries, root + "startup.png", 280, 158,
-    PALETTE[layout.buttonColor].hex, images.gate, true, !images.gate, optimizeImages);
+    PALETTE[layout.cardColor].hex, images.card, false, false, optimizeImages, warnings);
+  if (getRcoLayout(layout.templateStyle).gate !== null) {
+    await addImage(entries, root + "startup.png", 280, 158,
+      PALETTE[layout.buttonColor].hex, images.gate, true, !images.gate,
+      optimizeImages, warnings);
+  }
   for (const item of allFrameLayouts(layout, frameLayouts)) {
     const key = frameKey(item.templateStyle, item.frameId);
     await addImage(entries, root + `frame${item.frameId}.png`, item.w, item.h,
       PALETTE[item.buttonColor].hex,
       images.frames?.[key] ?? (item.frameId === layout.frameId ? images.button : null),
-      item.transparentButton, false, optimizeImages);
+      item.transparentButton, false, optimizeImages, warnings);
   }
   if (images.icon) await addImage(entries, "sce_sys/icon0.png", 128, 128, "#000000",
-    images.icon, false, false, optimizeImages);
+    images.icon, false, false, optimizeImages, warnings);
   if (images.boot) await addImage(entries, "sce_sys/pic0.png", 960, 544, "#000000",
-    images.boot, false, false, optimizeImages);
+    images.boot, false, false, optimizeImages, warnings);
   for (const [i, page] of (images.manual || []).entries()) {
     await addImage(entries, `sce_sys/manual/${String(i + 1).padStart(3, "0")}.png`,
-      960, 544, "#000000", page, false, false, optimizeImages);
+      960, 544, "#000000", page, false, false, optimizeImages, warnings);
   }
   return makeZip(entries);
 }

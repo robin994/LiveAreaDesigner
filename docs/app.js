@@ -3,18 +3,19 @@ import {
   editorOffsets, cardPositionFromEditorOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
-} from "./geometry.mjs?v=1.27";
-import { generateTemplate } from "./template.mjs?v=1.27";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.27";
+} from "./geometry.mjs?v=1.28";
+import { generateTemplate } from "./template.mjs?v=1.28";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.28";
 import {
   previewGate, previewFrames, previewSummary, frameRelativeOffsets,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
-} from "./template-preview.mjs?v=1.27";
+} from "./template-preview.mjs?v=1.28";
 import {
   frameKey, frameLayoutFor, allFrameLayouts, clampLiveitemToFrame
-} from "./frame-model.mjs?v=1.27";
-import { readVpk, patchVpk } from "./vpk.mjs?v=1.27";
-import { readVpkProject } from "./vpk-import.mjs?v=1.27";
+} from "./frame-model.mjs?v=1.28";
+import { readVpk, patchVpk } from "./vpk.mjs?v=1.28";
+import { readVpkProject } from "./vpk-import.mjs?v=1.28";
+import { getRcoLayout } from "./template-slots.mjs?v=1.28";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";
@@ -447,6 +448,9 @@ function updateInterface() {
     updateAssetUI(target);
   }
   for (const target of ["gate", "icon", "boot"]) updateAssetUI(target);
+  const noGate = getRcoLayout(layout.templateStyle).gate === null;
+  document.getElementById("gate-drop").hidden = noGate;
+  document.getElementById("gate-unavailable").hidden = !noGate;
 
   elements.move.classList.toggle("is-active", state.mode === "move");
   elements.resize.classList.toggle("is-active", state.mode === "resize");
@@ -938,10 +942,12 @@ async function downloadPackage() {
   const buttons = [elements.package, document.getElementById("download-package-side")];
   for (const button of buttons) button.disabled = true;
   try {
+    const warnings = [];
     const pack = await buildLiveAreaPackage(state.layout, state.images, state.frameLayouts,
-      { optimizeImages: state.optimizeImages });
+      { optimizeImages: state.optimizeImages, warnings });
     downloadBlob(pack, "LiveAreaDesigner-assets.zip");
-    notice(`LiveArea ZIP exported (${Math.round(pack.size / 1024)} KiB; PNG8 + zlib).`);
+    notice(`LiveArea ZIP exported (${Math.round(pack.size / 1024)} KiB; adaptive PNG8).` +
+      (warnings.length ? ` Size-limit adjustment: ${warnings.join(" ")}` : ""));
   } catch (error) {
     notice(error.message || "Unable to export LiveArea assets.");
   } finally {
@@ -1040,14 +1046,16 @@ async function downloadModifiedVpk() {
   button.disabled = true;
   statusLine.textContent = "Compressing PNG8 images and repacking VPK locally…";
   try {
+    const warnings = [];
     const assets = await buildLiveAreaPackage(state.layout, state.images,
-      state.frameLayouts, { optimizeImages: state.optimizeImages });
+      state.frameLayouts, { optimizeImages: state.optimizeImages, warnings });
     const preserve = new Map();
     const root = "sce_sys/livearea/contents/";
     if (state.images.card?.fromVpkPath &&
         state.layout.cardColor === state.importedCardColor)
       preserve.set(root + "bg0.png", state.images.card.fromVpkPath);
-    if (state.images.gate?.fromVpkPath)
+    if (getRcoLayout(state.layout.templateStyle).gate !== null &&
+        state.images.gate?.fromVpkPath)
       preserve.set(root + "startup.png", state.images.gate.fromVpkPath);
     for (const item of allFrameLayouts(state.layout, state.frameLayouts)) {
       const key = frameKey(item.templateStyle, item.frameId);
@@ -1066,7 +1074,8 @@ async function downloadModifiedVpk() {
     const vpk = await patchVpk(state.vpk, assets, { preserve });
     const basename = state.vpk.filename.replace(/\.vpk$/i, "");
     downloadBlob(vpk, `${basename}-livearea.vpk`);
-    statusLine.textContent = `${state.vpk.filename} · ${state.vpk.entries.length} original files preserved. Modified VPK: ${(vpk.size / 1048576).toFixed(1)} MiB.`;
+    statusLine.textContent = `${state.vpk.filename} · ${state.vpk.entries.length} original files preserved. Modified VPK: ${(vpk.size / 1048576).toFixed(1)} MiB.` +
+      (warnings.length ? ` Image-size adjustments: ${warnings.join(" ")}` : "");
     notice("Modified VPK exported. The original file was not changed.");
   } catch (error) {
     statusLine.textContent = `VPK export failed: ${error.message || "Unknown error"}`;
