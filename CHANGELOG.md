@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.29 - 2026-10-18 (PNG8 visual-fidelity refinement)
+
+- Improved the image-specific PNG8 encoder for artwork with complex gradients, shadows and glow effects. The v1.28 quantizer used a coarse RGB5 histogram for both palette refinement and color lookup, which introduced additional banding beyond PNG8's intrinsic 256-color limitation.
+- Web and Vita now refine their RGB palettes using **eight weighted centroid passes on 6-bit-per-channel histogram bins**. Pixels are assigned using their full 8-bit RGB values and the four nearest palette candidates per RGB6 cell instead of one cached coarse-bin result.
+- Default error diffusion is lowered to **0.15** to avoid grain and unnecessary file growth. File-size fallback progressively reduces dithering through 0.10, 0.05, and 0.00 before reducing the number of colors. Web caches a palette during retries so only the pixel mapping needs to be repeated.
+- On a user-provided 840x500 artwork sample with approximately 190,000 unique source colors, measured mean squared RGB error improved from **28.37 (v1.28)** to **21.99**, a roughly **22% reduction**, with a 128,401-byte indexed PNG that fits the 128 KiB export cap. This artwork is a private test fixture and is **not** included in the repository or release.
+- PNG8 still cannot reproduce an image with more than 256 colors losslessly. The export remains 8-bit indexed and non-interlaced for Vita compatibility; no unverified 24/32-bit fallback has been introduced.
+- Added a cached-palette regression test, tighter gradient-quality assertions, and real-image offline benchmarking. Existing import/edit/ZIP, alpha, gate-less ad0 and XML behavior remain unchanged.
+
 ## v1.28 - 2026-10-18 (gate-less layouts and high-fidelity PNG8)
 
 - **ad0 XML fix:** no `<gate>`, no `<startup-image>`, and no `startup.png` in the freshly exported assets. Also applies to firmware-defined gate-less `ad1`-`ad4` and `music` layouts. The web editor hides irrelevant gate upload controls for those styles.

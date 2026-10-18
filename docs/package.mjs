@@ -1,8 +1,8 @@
-import { CARD, PALETTE } from "./geometry.mjs?v=1.28";
-import { generateTemplate } from "./template.mjs?v=1.28";
-import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.28";
-import { getRcoLayout } from "./template-slots.mjs?v=1.28";
-import { quantizeRgba } from "./quantizer.mjs?v=1.28";
+import { CARD, PALETTE } from "./geometry.mjs?v=1.29";
+import { generateTemplate } from "./template.mjs?v=1.29";
+import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.29";
+import { getRcoLayout } from "./template-slots.mjs?v=1.29";
+import { quantizeRgba } from "./quantizer.mjs?v=1.29";
 
 const encoder = new TextEncoder();
 const SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
@@ -46,10 +46,11 @@ function chunk(type, bytes) {
  * PNG compression stays lossless after the palette conversion.
  */
 export async function encodeIndexedPng(width, height, rgba, allowTransparency = false,
-                                      { optimize = true, colors = 256, dither = 0.45,
-                                        fullPalette = false } = {}) {
+                                      { optimize = true, colors = 256, dither = 0.15,
+                                        fullPalette = false, paletteCache = null } = {}) {
   const { indices, palette, transparency } =
-    quantizeRgba(width, height, rgba, allowTransparency, { colors, dither });
+    quantizeRgba(width, height, rgba, allowTransparency,
+      { colors, dither, paletteCache });
   const storedPalette = fullPalette && palette.length < 256 * 3 ?
     new Uint8Array(256 * 3) : palette;
   if (storedPalette !== palette) storedPalette.set(palette);
@@ -181,14 +182,17 @@ export async function encodeVitaPng(filename, w, h, rgba, transparency = false,
   // Try maximum-fidelity/dithered PNG first. Dither can cost more space than
   // colors; removing it often meets SceShell's strict size limits while
   // retaining the entire adaptive 256-color palette.
-  const variants = [{ colors: 256, dither: 0.45 }, { colors: 256, dither: 0 },
+  const variants = [{ colors: 256, dither: 0.15 },
+    { colors: 256, dither: 0.1 }, { colors: 256, dither: 0.05 },
+    { colors: 256, dither: 0 },
     { colors: 192, dither: 0 }, { colors: 128, dither: 0 },
     { colors: 96, dither: 0 }, { colors: 64, dither: 0 },
     { colors: 32, dither: 0 }];
   let png = null, chosen = variants[0];
+  const paletteCache = new Map();
   for (const candidate of variants) {
     const encoded = await encodeIndexedPng(w, h, rgba, transparency,
-      { ...candidate, optimize, fullPalette: base === "pic0.png" });
+      { ...candidate, optimize, fullPalette: base === "pic0.png", paletteCache });
     png = encoded;
     chosen = candidate;
     if (encoded.length <= maxBytes) break;
@@ -197,7 +201,7 @@ export async function encodeVitaPng(filename, w, h, rgba, transparency = false,
     throw new Error(`${base} is ${Math.ceil(png.length / 1024)} KiB after PNG8 compression, over the ${maxBytes / 1024} KiB Vita limit. Reduce image complexity before exporting.`);
   }
   if (chosen !== variants[0]) {
-    warnings.push(`${base}: adapted PNG8 to ${chosen.colors} colors${chosen.dither ? " with dithering" : " without dithering"} for the Vita file-size limit.`);
+    warnings.push(`${base}: optimized PNG8 at ${chosen.colors} colors with ${chosen.dither.toFixed(2)} dithering to respect the Vita file-size limit.`);
   }
   return png;
 }

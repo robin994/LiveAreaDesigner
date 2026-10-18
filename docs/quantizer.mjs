@@ -6,8 +6,10 @@
  * colors and distributes the full 256-color budget across the colors present.
  */
 const BINS = 32768;
+const FINE_BINS = 262144;
 const MAX_COLORS = 256;
 const channelKey = (r, g, b) => ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+const fineChannelKey = (r, g, b) => ((r >> 2) << 12) | ((g >> 2) << 6) | (b >> 2);
 const clampByte = value => Math.max(0, Math.min(255, Math.round(value)));
 const score = (a, b, c, r, g, bl) =>
   3 * (a - r) ** 2 + 4 * (b - g) ** 2 + 2 * (c - bl) ** 2;
@@ -90,8 +92,102 @@ function nearest(r, g, b, palette) {
   return best;
 }
 
+function refinePalette(palette, rgba, allowTransparency) {
+  // The median-cut stage uses 5-bit bins for speed. Its centroids used to
+  // round off subtle shadows and pastel gradients. Refine the RGB centroids
+  // using much finer 6-bit bins without ever discarding input color values.
+  const counts = new Uint32Array(FINE_BINS);
+  const red = new Uint32Array(FINE_BINS);
+  const green = new Uint32Array(FINE_BINS);
+  const blue = new Uint32Array(FINE_BINS);
+  for (let i = 0; i < rgba.length; i += 4) {
+    if (allowTransparency && rgba[i + 3] < 128) continue;
+    const index = fineChannelKey(rgba[i], rgba[i + 1], rgba[i + 2]);
+    counts[index]++;
+    red[index] += rgba[i];
+    green[index] += rgba[i + 1];
+    blue[index] += rgba[i + 2];
+  }
+  const bins = [];
+  for (let index = 0; index < FINE_BINS; index++) {
+    if (!counts[index]) continue;
+    bins.push({
+      count: counts[index],
+      r: red[index] / counts[index],
+      g: green[index] / counts[index],
+      b: blue[index] / counts[index]
+    });
+  }
+  for (let pass = 0; pass < 8; pass++) {
+    const sums = palette.map(() => [0, 0, 0, 0]);
+    for (const bin of bins) {
+      const index = nearest(bin.r, bin.g, bin.b, palette);
+      const entry = sums[index];
+      entry[0] += bin.r * bin.count;
+      entry[1] += bin.g * bin.count;
+      entry[2] += bin.b * bin.count;
+      entry[3] += bin.count;
+    }
+    for (let i = 0; i < palette.length; i++) {
+      if (!sums[i][3]) continue;
+      palette[i] = {
+        r: clampByte(sums[i][0] / sums[i][3]),
+        g: clampByte(sums[i][1] / sums[i][3]),
+        b: clampByte(sums[i][2] / sums[i][3])
+      };
+    }
+  }
+}
+
+function makeAccurateLookup(palette, reserve) {
+  // A coarse single-color LUT introduced noticeable banding. At each 6-bit
+  // RGB point retain the four nearest palette candidates, then choose with
+  // the original full 8-bit pixel. This is near the exact nearest-neighbor
+  // result at a fraction of the cost of scanning 256 colors per pixel.
+  const candidates = new Uint8Array(FINE_BINS * 4);
+  const ready = new Uint8Array(FINE_BINS);
+  return (r, g, b) => {
+    const key = fineChannelKey(r, g, b);
+    const at = key * 4;
+    if (!ready[key]) {
+      const centerR = ((key >> 12) & 63) * 4 + 2;
+      const centerG = ((key >> 6) & 63) * 4 + 2;
+      const centerB = (key & 63) * 4 + 2;
+      const bestDistance = [Infinity, Infinity, Infinity, Infinity];
+      const bestIndex = [0, 0, 0, 0];
+      for (let i = 0; i < palette.length; i++) {
+        const c = palette[i];
+        const distance = score(centerR, centerG, centerB, c.r, c.g, c.b);
+        for (let j = 0; j < 4; j++) {
+          if (distance < bestDistance[j]) {
+            for (let k = 3; k > j; k--) {
+              bestDistance[k] = bestDistance[k - 1];
+              bestIndex[k] = bestIndex[k - 1];
+            }
+            bestDistance[j] = distance;
+            bestIndex[j] = i;
+            break;
+          }
+        }
+      }
+      for (let i = 0; i < 4; i++) candidates[at + i] = bestIndex[i];
+      ready[key] = 1;
+    }
+    let choice = candidates[at];
+    let best = Infinity;
+    for (let i = 0; i < 4; i++) {
+      const index = candidates[at + i];
+      const color = palette[index];
+      const distance = score(r, g, b, color.r, color.g, color.b);
+      if (distance < best) { choice = index; best = distance; }
+    }
+    return choice + reserve;
+  };
+}
+
 export function quantizeRgba(width, height, rgba, allowTransparency = false,
-                             { colors = MAX_COLORS, dither = 0.45 } = {}) {
+                             { colors = MAX_COLORS, dither = 0.15,
+                               paletteCache = null } = {}) {
   if (!(Number.isInteger(width) && Number.isInteger(height) &&
     width > 0 && height > 0 && rgba?.length === width * height * 4))
     throw new Error("Invalid RGBA image dimensions.");
@@ -100,25 +196,29 @@ export function quantizeRgba(width, height, rgba, allowTransparency = false,
 
   const reserve = allowTransparency ? 1 : 0;
   const maxOpaque = colors - reserve;
+  const cacheKey = `${maxOpaque}/${reserve}`;
+  const reusablePalette = paletteCache?.get(cacheKey) ?? null;
   const exact = new Map();
-  const counts = new Uint32Array(BINS);
-  const redSums = new Uint32Array(BINS);
-  const greenSums = new Uint32Array(BINS);
-  const blueSums = new Uint32Array(BINS);
-  let overflow = false;
-  for (let i = 0; i < rgba.length; i += 4) {
-    if (allowTransparency && rgba[i + 3] < 128) continue;
-    const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
-    const key = (r << 16) | (g << 8) | b;
-    if (!overflow && !exact.has(key)) {
-      if (exact.size < maxOpaque) exact.set(key, exact.size + reserve);
-      else { exact.clear(); overflow = true; }
+  const counts = reusablePalette ? null : new Uint32Array(BINS);
+  const redSums = reusablePalette ? null : new Uint32Array(BINS);
+  const greenSums = reusablePalette ? null : new Uint32Array(BINS);
+  const blueSums = reusablePalette ? null : new Uint32Array(BINS);
+  let overflow = Boolean(reusablePalette);
+  if (!reusablePalette) {
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (allowTransparency && rgba[i + 3] < 128) continue;
+      const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+      const key = (r << 16) | (g << 8) | b;
+      if (!overflow && !exact.has(key)) {
+        if (exact.size < maxOpaque) exact.set(key, exact.size + reserve);
+        else { exact.clear(); overflow = true; }
+      }
+      const bin = channelKey(r, g, b);
+      counts[bin]++;
+      redSums[bin] += r;
+      greenSums[bin] += g;
+      blueSums[bin] += b;
     }
-    const bin = channelKey(r, g, b);
-    counts[bin]++;
-    redSums[bin] += r;
-    greenSums[bin] += g;
-    blueSums[bin] += b;
   }
 
   const indices = new Uint8Array(width * height);
@@ -133,24 +233,20 @@ export function quantizeRgba(width, height, rgba, allowTransparency = false,
       indices[i] = exact.get((rgba[p] << 16) | (rgba[p + 1] << 8) | rgba[p + 2]);
     }
   } else {
-    const bins = [];
-    for (let i = 0; i < BINS; i++)
-      if (counts[i]) bins.push({
-        count: counts[i], r: redSums[i] / counts[i],
-        g: greenSums[i] / counts[i], b: blueSums[i] / counts[i]
-      });
-    const palette = choosePalette(bins, maxOpaque);
+    let palette = reusablePalette;
+    if (!palette) {
+      const bins = [];
+      for (let i = 0; i < BINS; i++)
+        if (counts[i]) bins.push({
+          count: counts[i], r: redSums[i] / counts[i],
+          g: greenSums[i] / counts[i], b: blueSums[i] / counts[i]
+        });
+      palette = choosePalette(bins, maxOpaque);
+      refinePalette(palette, rgba, allowTransparency);
+      paletteCache?.set(cacheKey, palette);
+    }
     colorsOut.push(...palette);
-    const cache = new Int16Array(BINS).fill(-1);
-    const lookup = (r, g, b) => {
-      const key = channelKey(r, g, b);
-      let index = cache[key];
-      if (index === -1) {
-        index = nearest(r, g, b, palette);
-        cache[key] = index;
-      }
-      return index + reserve;
-    };
+    const lookup = makeAccurateLookup(palette, reserve);
     const diffusion = Math.max(0, Math.min(1, dither));
     if (!diffusion) {
       for (let i = 0; i < indices.length; i++) {

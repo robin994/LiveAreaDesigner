@@ -3,19 +3,19 @@ import {
   editorOffsets, cardPositionFromEditorOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
-} from "./geometry.mjs?v=1.28";
-import { generateTemplate } from "./template.mjs?v=1.28";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.28";
+} from "./geometry.mjs?v=1.29";
+import { generateTemplate } from "./template.mjs?v=1.29";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.29";
 import {
   previewGate, previewFrames, previewSummary, frameRelativeOffsets,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
-} from "./template-preview.mjs?v=1.28";
+} from "./template-preview.mjs?v=1.29";
 import {
   frameKey, frameLayoutFor, allFrameLayouts, clampLiveitemToFrame
-} from "./frame-model.mjs?v=1.28";
-import { readVpk, patchVpk } from "./vpk.mjs?v=1.28";
-import { readVpkProject } from "./vpk-import.mjs?v=1.28";
-import { getRcoLayout } from "./template-slots.mjs?v=1.28";
+} from "./frame-model.mjs?v=1.29";
+import { readVpk, patchVpk } from "./vpk.mjs?v=1.29";
+import { readVpkProject } from "./vpk-import.mjs?v=1.29";
+import { getRcoLayout } from "./template-slots.mjs?v=1.29";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";

@@ -111,8 +111,32 @@ test("adaptive 256-color quantizer improves three-channel gradients over fixed 7
       2 * (rgba[p + 2] - result.palette[q + 2]) ** 2;
   }
   assert.equal(result.palette.length, 768);
-  assert.ok(adaptiveError < .45 * legacyError,
+  assert.ok(adaptiveError < .09 * legacyError,
     `Adaptive error ${(adaptiveError / legacyError).toFixed(3)} of old palette`);
+});
+
+test("reusing an image-specific palette changes only processing time, not colors", () => {
+  const width = 160, height = 90;
+  const rgba = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const at = (y * width + x) * 4;
+      rgba[at] = (x * 3 + y * 17) & 255;
+      rgba[at + 1] = (x * 5 + y * 7) & 255;
+      rgba[at + 2] = (x * 11 + y * 13) & 255;
+      rgba[at + 3] = 255;
+    }
+  }
+  const paletteCache = new Map();
+  const options = { colors: 256, dither: 0.1, paletteCache };
+  const first = quantizeRgba(width, height, rgba, false, options);
+  const second = quantizeRgba(width, height, rgba, false, options);
+  const withoutCache = quantizeRgba(width, height, rgba, false,
+    { colors: 256, dither: 0.1 });
+  assert.equal(paletteCache.size, 1);
+  assert.deepEqual(second.palette, first.palette);
+  assert.deepEqual(second.indices, first.indices);
+  assert.deepEqual(second.indices, withoutCache.indices);
 });
 
 test("PNG8 compression settings affect byte size, not color quality", async () => {
@@ -125,18 +149,18 @@ test("PNG8 compression settings affect byte size, not color quality", async () =
   assert.deepEqual(optimized.palette, basic.palette);
 });
 
-test("Vita size guard disables dithering before throwing away palette colors", async () => {
+test("Vita size guard reduces dithering before discarding palette colors", async () => {
   const width = 840, height = 500;
   const rgba = new Uint8Array(width * height * 4);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
       rgba[i] = Math.max(0, Math.min(255,
-        100 + 70 * Math.sin(x * .028 + y * .003) + 50 * Math.sin(y * .063)));
+        100 + 70 * Math.sin(x * .085 + y * .003) + 50 * Math.sin(y * .1955)));
       rgba[i + 1] = Math.max(0, Math.min(255,
-        140 + 85 * Math.sin(y * .047 + x * .011)));
+        140 + 85 * Math.sin(y * .14875 + x * .011)));
       rgba[i + 2] = Math.max(0, Math.min(255,
-        100 + 100 * Math.sin((y + x) * .031)));
+        100 + 100 * Math.sin((y + x) * .0935)));
       rgba[i + 3] = 255;
     }
   }
@@ -148,7 +172,7 @@ test("Vita size guard disables dithering before throwing away palette colors", a
   assert.ok(result.length <= 128 * 1024);
   assert.equal(readIndexedPng(result).palette.length / 3, 256,
     "First fallback must retain the 256-color palette and remove only dithering");
-  assert.match(warnings.join(" "), /without dithering/);
+  assert.match(warnings.join(" "), /dithering/);
 });
 
 test("pic0.png retains 256 palette slots for stricter Vita shell expectations", async () => {

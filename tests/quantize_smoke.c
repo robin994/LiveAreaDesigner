@@ -60,7 +60,7 @@ int main(void) {
     }
     const double ratio = adaptive_error / legacy_error;
     printf("Native gradient color error compared to fixed palette: %.3fx\n", ratio);
-    assert(ratio < .45);
+    assert(ratio < .09);
     lad_indexed_free(&exact);
     free(gradient);
     puts("Adaptive palette host smoke tests passed");

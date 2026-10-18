@@ -6,6 +6,7 @@
 #include <string.h>
 
 #define LAD_HIST_BINS 32768
+#define LAD_FINE_HIST_BINS 262144
 #define LAD_EXACT_HASH 1024
 
 typedef struct {
@@ -37,6 +38,10 @@ static int compare_bin(const void *left, const void *right) {
 
 static int rgb_key(int r, int g, int b) {
     return ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+}
+
+static int fine_rgb_key(int r, int g, int b) {
+    return ((r >> 2) << 12) | ((g >> 2) << 6) | (b >> 2);
 }
 
 static uint8_t byte_clamp(float value) {
@@ -155,15 +160,112 @@ static int adaptive_palette(ColorBin *bins, int bins_count, int requested,
     return boxes_count;
 }
 
-static int cached_nearest(int r, int g, int b,
-                          const uint8_t palette[256][3], int colors,
-                          int start, int16_t *cache) {
-    const int key = rgb_key(r, g, b);
-    if (cache[key] >= 0) return cache[key];
-    const int index = nearest_color((float)r, (float)g, (float)b,
-                                    palette, colors, start);
-    cache[key] = (int16_t)index;
-    return index;
+static void refine_palette(const uint8_t *rgba, size_t total_pixels,
+                           bool transparency, uint8_t palette[256][3],
+                           int colors, int reserve) {
+    /* Use an RGB 6-bit histogram to refine the median-cut palette without
+       throwing away the 8-bit color precision of its weighted centroids.
+       This makes the shadow gradients markedly smoother than the RGB5 LUT. */
+    Histogram *histogram = (Histogram *)calloc(LAD_FINE_HIST_BINS, sizeof(*histogram));
+    if (!histogram) return; /* Initial median-cut palette remains valid. */
+    int bins_count = 0;
+    for (size_t pixel = 0; pixel < total_pixels; pixel++) {
+        const uint8_t *src = rgba + pixel * 4;
+        if (transparency && src[3] < 128) continue;
+        Histogram *cell = &histogram[fine_rgb_key(src[0], src[1], src[2])];
+        if (!cell->count) bins_count++;
+        cell->count++;
+        cell->sum_r += src[0];
+        cell->sum_g += src[1];
+        cell->sum_b += src[2];
+    }
+    if (!bins_count) {
+        free(histogram);
+        return;
+    }
+    ColorBin *bins = (ColorBin *)malloc((size_t)bins_count * sizeof(*bins));
+    if (!bins) { free(histogram); return; }
+    int next = 0;
+    for (int i = 0; i < LAD_FINE_HIST_BINS; i++) {
+        const Histogram *cell = &histogram[i];
+        if (!cell->count) continue;
+        bins[next++] = (ColorBin){
+            .r = (float)cell->sum_r / cell->count,
+            .g = (float)cell->sum_g / cell->count,
+            .b = (float)cell->sum_b / cell->count,
+            .count = cell->count
+        };
+    }
+    free(histogram);
+    for (int pass = 0; pass < 8; pass++) {
+        double sums[256][4] = {{0.}};
+        for (int i = 0; i < bins_count; i++) {
+            const ColorBin *bin = &bins[i];
+            const int color = nearest_color(bin->r, bin->g, bin->b,
+                                            (const uint8_t (*)[3])palette,
+                                            colors, reserve);
+            sums[color][0] += bin->r * bin->count;
+            sums[color][1] += bin->g * bin->count;
+            sums[color][2] += bin->b * bin->count;
+            sums[color][3] += bin->count;
+        }
+        for (int i = reserve; i < colors; i++) {
+            if (sums[i][3] == 0.) continue;
+            for (int channel = 0; channel < 3; channel++)
+                palette[i][channel] = byte_clamp((float)(sums[i][channel] / sums[i][3]));
+        }
+    }
+    free(bins);
+}
+
+static int accurate_nearest(int r, int g, int b,
+                            const uint8_t palette[256][3], int colors,
+                            int start, uint8_t *candidates, uint8_t *ready) {
+    if (!candidates || !ready)
+        return nearest_color((float)r, (float)g, (float)b, palette, colors, start);
+    const int key = fine_rgb_key(r, g, b);
+    const int at = key * 4;
+    if (!ready[key]) {
+        const float cr = (float)(((key >> 12) & 63) * 4 + 2);
+        const float cg = (float)(((key >> 6) & 63) * 4 + 2);
+        const float cb = (float)((key & 63) * 4 + 2);
+        float distances[4] = {HUGE_VALF, HUGE_VALF, HUGE_VALF, HUGE_VALF};
+        uint8_t best[4] = {(uint8_t)start, (uint8_t)start,
+                            (uint8_t)start, (uint8_t)start};
+        for (int i = start; i < colors; i++) {
+            const float dr = cr - palette[i][0];
+            const float dg = cg - palette[i][1];
+            const float db = cb - palette[i][2];
+            const float distance = 3.f * dr * dr + 4.f * dg * dg + 2.f * db * db;
+            for (int j = 0; j < 4; j++) {
+                if (distance < distances[j]) {
+                    for (int k = 3; k > j; k--) {
+                        distances[k] = distances[k - 1];
+                        best[k] = best[k - 1];
+                    }
+                    distances[j] = distance;
+                    best[j] = (uint8_t)i;
+                    break;
+                }
+            }
+        }
+        memcpy(candidates + at, best, 4);
+        ready[key] = 1;
+    }
+    int winner = candidates[at];
+    float best_distance = HUGE_VALF;
+    for (int j = 0; j < 4; j++) {
+        const int i = candidates[at + j];
+        const float dr = r - palette[i][0];
+        const float dg = g - palette[i][1];
+        const float db = b - palette[i][2];
+        const float distance = 3.f * dr * dr + 4.f * dg * dg + 2.f * db * db;
+        if (distance < best_distance) {
+            best_distance = distance;
+            winner = i;
+        }
+    }
+    return winner;
 }
 
 static void diffuse(float *row, int width, int x,
@@ -272,9 +374,15 @@ bool lad_quantize_rgba(const uint8_t *rgba, int width, int height,
     output->colors = reserve + count;
     free(bins);
 
-    int16_t *cache = (int16_t *)malloc(LAD_HIST_BINS * sizeof(*cache));
-    if (!cache) { lad_indexed_free(output); return false; }
-    memset(cache, 0xff, LAD_HIST_BINS * sizeof(*cache));
+    refine_palette(rgba, total_pixels, transparency, output->rgb,
+                   output->colors, reserve);
+    uint8_t *candidates = (uint8_t *)malloc(LAD_FINE_HIST_BINS * 4);
+    uint8_t *ready = (uint8_t *)calloc(LAD_FINE_HIST_BINS, 1);
+    if (!candidates || !ready) {
+        free(candidates);
+        free(ready);
+        candidates = ready = NULL; /* OOM fallback: full per-pixel search. */
+    }
     if (dither < 0.f) dither = 0.f;
     if (dither > 1.f) dither = 1.f;
     float *current = NULL;
@@ -283,7 +391,7 @@ bool lad_quantize_rgba(const uint8_t *rgba, int width, int height,
         current = (float *)calloc((size_t)(width + 2) * 3, sizeof(float));
         following = (float *)calloc((size_t)(width + 2) * 3, sizeof(float));
         if (!current || !following) {
-            free(current); free(following); free(cache);
+            free(current); free(following); free(candidates); free(ready);
             lad_indexed_free(output);
             return false;
         }
@@ -302,9 +410,10 @@ bool lad_quantize_rgba(const uint8_t *rgba, int width, int height,
             const int r = current ? byte_clamp(src[0] + clamp_error(current[at])) : src[0];
             const int g = current ? byte_clamp(src[1] + clamp_error(current[at + 1])) : src[1];
             const int b = current ? byte_clamp(src[2] + clamp_error(current[at + 2])) : src[2];
-            const int color = cached_nearest(r, g, b,
-                                              (const uint8_t (*)[3])output->rgb,
-                                              output->colors, reserve, cache);
+            const int color = accurate_nearest(r, g, b,
+                                                (const uint8_t (*)[3])output->rgb,
+                                                output->colors, reserve,
+                                                candidates, ready);
             indices[pixel] = (uint8_t)color;
             if (!current) continue;
             const float er = (r - output->rgb[color][0]) * dither;
@@ -325,6 +434,7 @@ bool lad_quantize_rgba(const uint8_t *rgba, int width, int height,
     }
     free(current);
     free(following);
-    free(cache);
+    free(candidates);
+    free(ready);
     return true;
 }

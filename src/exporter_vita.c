@@ -149,8 +149,8 @@ static bool export_picture(const char *source, const char *output,
     else if (strcmp(basename, "pic0.png") == 0)
         max_size = 256 * 1024;
     const bool full_palette = strcmp(basename, "pic0.png") == 0;
-    const int color_steps[] = {256, 256, 192, 128, 96, 64, 32};
-    const float dither_steps[] = {.45f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+    const int color_steps[] = {256, 256, 256, 256, 192, 128, 96, 64, 32};
+    const float dither_steps[] = {.15f, .10f, .05f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
     bool ok = false;
     for (unsigned int i = 0; i < sizeof(color_steps) / sizeof(color_steps[0]); i++) {
         if (!encode_png8(dst, output, transparent,

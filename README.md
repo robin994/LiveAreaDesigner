@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — v1.28, fidelity-first PNG8, gate-less ad0, VPK editing and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — v1.29, enhanced PNG8 fidelity, gate-less ad0, VPK editing and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -42,7 +42,9 @@ The web importer supports **non-encrypted, single-volume ZIP32 archives up to 51
 
 **New in 1.28:** The old encoder mapped everything onto the same **7 x 8 x 4 RGB cube**, which made gradients and artwork visibly wrong. Both the web editor and the Vita app now build a **color palette tailored to each image** (weighted median-cut, refinement and controlled error diffusion). Artwork with **256 or fewer opaque colors** retains those exact RGB colors; more complex artwork gets an adaptive palette of up to 256. This is a locally implemented quality improvement inspired by the principles used by tools such as pngquant/TinyPNG; the app **does not call TinyPNG or upload images**.
 
-The exports stay **8-bit indexed, non-interlaced PNGs**, with lossless zlib/DEFLATE compression after the palette conversion. The web's **Optimize PNG8 file size** option compares adaptive PNG filters with filter-0 and uses whichever compresses better; turning it off does **not** restore the old harsh palette. The Vita uses libpng's adaptive filters and maximum zlib level. To meet common Vita shell size restrictions, exports first try 256 colors with mild dithering, then 256 colors without dithering, and **only then** smaller adaptive palettes where necessary. On web, any automatic downgrade is reported after export; images that still cannot fit fail with a descriptive error instead of shipping invalid oversized assets.
+**New in 1.29:** Palette construction is now refined through **eight weighted centroid passes using 6-bit RGB histograms**. Color mapping then picks the closest color at full source-pixel precision from the best four palette candidates rather than using a single coarse lookup, significantly improving shadows and smooth gradients. The default dithering strength is reduced to 0.15; when the Vita file-size cap is reached, the encoder tries 0.10, 0.05 and 0.00 before reducing the 256-color palette. Browser exports cache the optimized palette for those retries. On a complex **840 x 500** user-provided image with ~190,000 distinct colors, the measured mean squared RGB error fell from **28.37 to 21.99** (approximately **22% less error**) while fitting the 128 KiB bg0 cap. The original copyrighted artwork used to verify this stays local and is not distributed.
+
+The exports stay **8-bit indexed, non-interlaced PNGs**, with lossless zlib/DEFLATE compression after the palette conversion. The web's **Optimize PNG8 file size** option compares adaptive PNG filters with filter-0 and uses whichever compresses better; turning it off does **not** change the palette quality. The Vita uses libpng's adaptive filters and maximum zlib level. On web, any automatic size-based downgrade is reported after export; images that still cannot fit fail with a descriptive error instead of shipping invalid oversized assets.
 
 Conservative size caps for the most restricted assets: **bg0.png 128 KiB, startup.png 64 KiB, icon0.png 128 KiB, pic0.png 256 KiB**. The bootscreen uses a full 256-entry PNG palette for compatibility even when fewer colors are needed.
 
@@ -163,7 +165,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (v1.28). RCO geometry is verified against the user's own Vita firmware, but the VPK editing workflow and new adaptive PNG8 exports still require end-to-end hardware testing.
+Output: `build/LIVAREA01.vpk` (v1.29). RCO geometry is verified against the user's own Vita firmware, but the VPK editing workflow and refined PNG8 exports still require end-to-end hardware testing.
 
 Tests:
 
