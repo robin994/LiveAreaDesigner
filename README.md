@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — v1.29, enhanced PNG8 fidelity, gate-less ad0, VPK editing and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — v1.30, TinyPNG-quality PNG8 preservation, gate-less ad0, VPK editing and independent LiveArea frames.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -44,9 +44,13 @@ The web importer supports **non-encrypted, single-volume ZIP32 archives up to 51
 
 **New in 1.29:** Palette construction is now refined through **eight weighted centroid passes using 6-bit RGB histograms**. Color mapping then picks the closest color at full source-pixel precision from the best four palette candidates rather than using a single coarse lookup, significantly improving shadows and smooth gradients. The default dithering strength is reduced to 0.15; when the Vita file-size cap is reached, the encoder tries 0.10, 0.05 and 0.00 before reducing the 256-color palette. Browser exports cache the optimized palette for those retries. On a complex **840 x 500** user-provided image with ~190,000 distinct colors, the measured mean squared RGB error fell from **28.37 to 21.99** (approximately **22% less error**) while fitting the 128 KiB bg0 cap. The original copyrighted artwork used to verify this stays local and is not distributed.
 
-The exports stay **8-bit indexed, non-interlaced PNGs**, with lossless zlib/DEFLATE compression after the palette conversion. The web's **Optimize PNG8 file size** option compares adaptive PNG filters with filter-0 and uses whichever compresses better; turning it off does **not** change the palette quality. The Vita uses libpng's adaptive filters and maximum zlib level. On web, any automatic size-based downgrade is reported after export; images that still cannot fit fail with a descriptive error instead of shipping invalid oversized assets.
+**New in 1.30:** The 128 KiB background limit imposed by v1.28/1.29 was unnecessarily strict. Read-only inspection of a connected retail Vita showed Sony's own indexed, 840x500 `bg0.png` files exceeding 128 KiB, including one **369,340-byte** file. LiveArea Designer now permits **384 KiB for bg0.png** while retaining PNG8; 384 KiB is a *conservative bound based on observed firmware assets*, not a published universal maximum. It no longer destroys artwork colors to squeeze every background into 128 KiB.
 
-Conservative size caps for the most restricted assets: **bg0.png 128 KiB, startup.png 64 KiB, icon0.png 128 KiB, pic0.png 256 KiB**. The bootscreen uses a full 256-entry PNG palette for compatibility even when fewer colors are needed.
+**Already-optimized PNGs are preserved.** If you import an opaque 840x500 PNG8 and use it as a card background without resizing, both the web and native exporters copy it **byte for byte** rather than quantizing it again. An RGB PNG containing 256 or fewer colors is re-indexed with *no RGB pixel loss*. Verified against a user-supplied TinyPNG example: **0 changed RGB pixels**, 157,447-byte PNG8 from a 429,699-byte RGB upload. Importing an optimized image is the most reliable way to retain that exact appearance. A full-color source with hundreds of thousands of distinct colors must still be quantized and cannot be *guaranteed* to look identical to TinyPNG's proprietary engine.
+
+For full-color sources, the exporter uses a more natural **0.50 dithering strength** and scales down only if needed, maintaining all 256 colors before reducing the palette. The exports stay **8-bit indexed, non-interlaced PNGs**, with lossless zlib/DEFLATE compression after the palette conversion. The web's **Optimize PNG8 file size** option compares adaptive PNG filters with filter-0 and uses whichever compresses better. The Vita uses libpng's adaptive filters and maximum zlib level. Web export reports automatic size-based adjustments.
+
+Conservative size caps for restricted assets: **bg0.png 384 KiB (observed-compatible), startup.png 64 KiB, icon0.png 128 KiB, pic0.png 256 KiB**. Only the bg0 allowance has been checked against larger real firmware files. The bootscreen uses a full 256-entry PNG palette even when fewer colors are needed.
 
 PNG8 conversion itself is **not mathematically lossless** if the image has more than 256 colors. Alpha in the current export is binary (transparent/opaque) rather than full partial transparency. Imported, unchanged image bytes are preserved when patching a VPK if dimensions and rendering properties are compatible. ZIP/VPK containers do not additionally need to DEFLATE PNGs, since IDAT is already compressed. A physical Vita install remains the final compatibility check.
 
@@ -165,7 +169,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (v1.29). RCO geometry is verified against the user's own Vita firmware, but the VPK editing workflow and refined PNG8 exports still require end-to-end hardware testing.
+Output: `build/LIVAREA01.vpk` (v1.30). RCO geometry and the larger background sizes were observed in the user's own Vita firmware, but the VPK editing workflow and new asset exports still require end-to-end hardware testing.
 
 Tests:
 
@@ -183,6 +187,8 @@ clang -std=c99 -Wall -Wextra -Werror -Isrc src/template_preview.c src/template_s
 build/host-test/template_preview_smoke
 clang -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/quantize.c tests/quantize_smoke.c -lm -o build/host-test/quantize_smoke
 build/host-test/quantize_smoke
+clang -std=c99 -Wall -Wextra -Werror -I/opt/homebrew/include -Isrc src/png_passthrough.c tests/png_passthrough_smoke.c -L/opt/homebrew/lib -lpng -lz -o build/host-test/png_passthrough_smoke
+build/host-test/png_passthrough_smoke
 ```
 
 ### Regenerating the RCO layout tables

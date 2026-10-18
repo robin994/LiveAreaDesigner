@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.30 - 2026-10-18 (TinyPNG-quality compatibility and faithful asset reuse)
+
+- **Removed the artificial 128 KiB ceiling for bg0.png.** A read-only inspection of a real PS Vita firmware installation found stock Sony 840x500, indexed PNG8 backgrounds up to **369,340 bytes**. The previous exporter cap forced unnecessary dithering/color reduction. The editor now accepts indexed bg0 up to **384 KiB**, a conservative envelope based on observed firmware assets, not a claimed universal Sony limit.
+- **Preserve an existing compatible PNG8 exactly.** For opaque 840x500 indexed backgrounds (no tRNS), web ZIP exports and Vita-native exports now copy the original PNG bytes without re-encoding, if the input already fits the size envelope. Users can import a TinyPNG/pngquant-optimized image directly without damaging its palette.
+- For source RGB images that already contain at most 256 distinct colors, the offline quantizer still reproduces their RGB values **exactly** and encodes them as indexed PNG8. The user-provided TinyPNG comparison image was verified to round-trip through the real web encoder with **0 RGB pixels changed**, from a 429,699-byte RGB upload to a 157,447-byte PNG8.
+- For images requiring quantization, the default **quality-first dithering strength is 0.50**. The exporter tries 0.35, 0.15, 0.05 and 0.00 before reducing 256-color palette size if an asset exceeds its own limit.
+- Other image limits remain conservative pending direct hardware tests; the image format stays noninterlaced PNG8. The source comparison artwork is not included in the repository or releases.
+- Added tests for high-fidelity backgrounds larger than 128 KiB, exact-color preservation, browser binary PNG8 reuse and native opaque indexed PNG pass-through.
+
 ## v1.29 - 2026-10-18 (PNG8 visual-fidelity refinement)
 
 - Improved the image-specific PNG8 encoder for artwork with complex gradients, shadows and glow effects. The v1.28 quantizer used a coarse RGB5 histogram for both palette refinement and color lookup, which introduced additional banding beyond PNG8's intrinsic 256-color limitation.

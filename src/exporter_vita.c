@@ -1,6 +1,7 @@
 #include "exporter.h"
 #include "template_slots.h"
 #include "quantize.h"
+#include "png_passthrough.h"
 
 #include <SDL.h>
 #include <SDL_image.h>
@@ -14,6 +15,9 @@
 
 #define CONTENTS_DIR LAD_EXPORT_DIR "/sce_sys/livearea/contents"
 #define MAX_SOURCE_EDGE 2048
+/* Real stock firmware on a retail Vita uses indexed bg0.png up to 369,340 B.
+   Allow such content rather than forcing it below the previous 128 KiB cap. */
+#define BG0_PNG_LIMIT (384 * 1024)
 
 static const SDL_Color palette[LAD_PALETTE_COUNT] = {
     {113, 0, 158, 255}, {224, 20, 208, 255}, {32, 106, 190, 255},
@@ -118,6 +122,12 @@ cleanup:
 
 static bool export_picture(const char *source, const char *output,
                            int width, int height, SDL_Color color, bool transparent) {
+    const char *basename = strrchr(output, '/');
+    basename = basename ? basename + 1 : output;
+    if (!transparent && strcmp(basename, "bg0.png") == 0 &&
+        lad_copy_opaque_indexed_png(source, output, width, height, BG0_PNG_LIMIT))
+        return true;
+
     SDL_Surface *dst = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32,
                                                      SDL_PIXELFORMAT_RGBA32);
     if (!dst) return false;
@@ -139,18 +149,19 @@ static bool export_picture(const char *source, const char *output,
         }
         SDL_FreeSurface(image);
     }
-    const char *basename = strrchr(output, '/');
-    basename = basename ? basename + 1 : output;
     size_t max_size = 0;
-    if (strcmp(basename, "bg0.png") == 0 || strcmp(basename, "icon0.png") == 0)
+    if (strcmp(basename, "bg0.png") == 0)
+        max_size = BG0_PNG_LIMIT;
+    else if (strcmp(basename, "icon0.png") == 0)
         max_size = 128 * 1024;
     else if (strcmp(basename, "startup.png") == 0)
         max_size = 64 * 1024;
     else if (strcmp(basename, "pic0.png") == 0)
         max_size = 256 * 1024;
     const bool full_palette = strcmp(basename, "pic0.png") == 0;
-    const int color_steps[] = {256, 256, 256, 256, 192, 128, 96, 64, 32};
-    const float dither_steps[] = {.15f, .10f, .05f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+    const int color_steps[] = {256, 256, 256, 256, 256, 192, 128, 96, 64, 32};
+    const float dither_steps[] = {.50f, .35f, .15f, .05f, 0.f,
+                                  0.f, 0.f, 0.f, 0.f, 0.f};
     bool ok = false;
     for (unsigned int i = 0; i < sizeof(color_steps) / sizeof(color_steps[0]); i++) {
         if (!encode_png8(dst, output, transparent,

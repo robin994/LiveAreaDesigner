@@ -1,8 +1,8 @@
-import { CARD, PALETTE } from "./geometry.mjs?v=1.29";
-import { generateTemplate } from "./template.mjs?v=1.29";
-import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.29";
-import { getRcoLayout } from "./template-slots.mjs?v=1.29";
-import { quantizeRgba } from "./quantizer.mjs?v=1.29";
+import { CARD, PALETTE } from "./geometry.mjs?v=1.30";
+import { generateTemplate } from "./template.mjs?v=1.30";
+import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.30";
+import { getRcoLayout } from "./template-slots.mjs?v=1.30";
+import { quantizeRgba } from "./quantizer.mjs?v=1.30";
 
 const encoder = new TextEncoder();
 const SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
@@ -177,13 +177,16 @@ function artwork(width, height, background, source, transparent = false, placeho
 export async function encodeVitaPng(filename, w, h, rgba, transparency = false,
                                     { optimize = true, warnings = [] } = {}) {
   const base = filename.split("/").at(-1);
-  const maxBytes = ({ "bg0.png": 128 * 1024, "startup.png": 64 * 1024,
+  // Stock Vita firmware includes indexed 840x500 bg0.png assets as large
+  // as 369,340 bytes. The previous 128 KiB bound was a needless quality
+  // regression, not a limit observed in SceShell.
+  const maxBytes = ({ "bg0.png": 384 * 1024, "startup.png": 64 * 1024,
     "icon0.png": 128 * 1024, "pic0.png": 256 * 1024 })[base] ?? Infinity;
-  // Try maximum-fidelity/dithered PNG first. Dither can cost more space than
-  // colors; removing it often meets SceShell's strict size limits while
-  // retaining the entire adaptive 256-color palette.
-  const variants = [{ colors: 256, dither: 0.15 },
-    { colors: 256, dither: 0.1 }, { colors: 256, dither: 0.05 },
+  // Prefer smooth full-palette gradients. Only reduce dithering and then
+  // palette size when a restricted asset actually needs it.
+  const variants = [{ colors: 256, dither: 0.50 },
+    { colors: 256, dither: 0.35 }, { colors: 256, dither: 0.15 },
+    { colors: 256, dither: 0.05 },
     { colors: 256, dither: 0 },
     { colors: 192, dither: 0 }, { colors: 128, dither: 0 },
     { colors: 96, dither: 0 }, { colors: 64, dither: 0 },
@@ -206,8 +209,43 @@ export async function encodeVitaPng(filename, w, h, rgba, transparency = false,
   return png;
 }
 
+async function preserveOpaqueIndexedPng(source, width, height, maxBytes) {
+  if (!source?.blob || !source?.image ||
+      source.image.naturalWidth !== width || source.image.naturalHeight !== height ||
+      !/\.png$/i.test(source.name || "")) return null;
+  const bytes = new Uint8Array(await source.blob.arrayBuffer());
+  if (bytes.length > maxBytes || bytes.length < 65 ||
+      !SIGNATURE.every((part, i) => part === bytes[i])) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(8) !== 13 || view.getUint32(12) !== 0x49484452 ||
+      view.getUint32(16) !== width || view.getUint32(20) !== height ||
+      bytes[24] !== 8 || bytes[25] !== 3 || bytes[28] !== 0) return null;
+  let position = 8, palette = false, imageData = false, end = false;
+  while (position + 12 <= bytes.length) {
+    const size = view.getUint32(position);
+    if (size > bytes.length - position - 12) return null;
+    const type = view.getUint32(position + 4);
+    if (type === 0x74524e53) return null; // tRNS: background must be opaque.
+    if (type === 0x504c5445) palette = size > 0 && size <= 768 && size % 3 === 0;
+    if (type === 0x49444154) imageData = true;
+    position += size + 12;
+    if (type === 0x49454e44) { end = true; break; }
+  }
+  // Browser image decoding has already validated that the source is a PNG.
+  // Reuse its indexed pixels and original palette without a second quantizer.
+  return palette && imageData && end && position === bytes.length ? bytes : null;
+}
+
 async function addImage(entries, filename, w, h, color, image, transparency,
                         placeholder = false, optimization = true, warnings = []) {
+  const maxBytes = filename.endsWith("/bg0.png") ? 384 * 1024 : Infinity;
+  if (!transparency && image && maxBytes !== Infinity) {
+    const preserved = await preserveOpaqueIndexedPng(image, w, h, maxBytes);
+    if (preserved) {
+      entries.push({ name: filename, data: preserved });
+      return;
+    }
+  }
   const png = await encodeVitaPng(filename, w, h,
     artwork(w, h, color, image, transparency, placeholder),
     transparency, { optimize: optimization, warnings });

@@ -149,30 +149,39 @@ test("PNG8 compression settings affect byte size, not color quality", async () =
   assert.deepEqual(optimized.palette, basic.palette);
 });
 
-test("Vita size guard reduces dithering before discarding palette colors", async () => {
+test("bg0 over 128 KiB retains all 256 original colors inside the firmware-observed size envelope", async () => {
   const width = 840, height = 500;
   const rgba = new Uint8Array(width * height * 4);
+  let random = 0x7b57a341;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
-      rgba[i] = Math.max(0, Math.min(255,
-        100 + 70 * Math.sin(x * .085 + y * .003) + 50 * Math.sin(y * .1955)));
-      rgba[i + 1] = Math.max(0, Math.min(255,
-        140 + 85 * Math.sin(y * .14875 + x * .011)));
-      rgba[i + 2] = Math.max(0, Math.min(255,
-        100 + 100 * Math.sin((y + x) * .0935)));
+      if (y < 260) {
+        random ^= random << 13;
+        random ^= random >>> 17;
+        random ^= random << 5;
+      }
+      const index = y < 260 ? random >>> 24 : (x + y) & 255;
+      rgba[i] = index;
+      rgba[i + 1] = (index * 73) & 255;
+      rgba[i + 2] = (index * 39) & 255;
       rgba[i + 3] = 255;
     }
   }
-  const initial = await encodeIndexedPng(width, height, rgba);
-  assert.ok(initial.length > 128 * 1024, "The test image must trigger size fallback");
   const warnings = [];
   const result = await encodeVitaPng("sce_sys/livearea/contents/bg0.png", width, height,
     rgba, false, { warnings });
-  assert.ok(result.length <= 128 * 1024);
-  assert.equal(readIndexedPng(result).palette.length / 3, 256,
-    "First fallback must retain the 256-color palette and remove only dithering");
-  assert.match(warnings.join(" "), /dithering/);
+  assert.ok(result.length > 128 * 1024,
+    "The test must exercise a legal bg0 larger than the old artificial limit");
+  assert.ok(result.length <= 384 * 1024);
+  const decoded = readIndexedPng(result);
+  assert.equal(decoded.palette.length / 3, 256);
+  for (let i = 0; i < width * height; i++) {
+    const input = i * 4, output = decoded.indices[i] * 3;
+    for (let channel = 0; channel < 3; channel++)
+      assert.equal(decoded.palette[output + channel], rgba[input + channel]);
+  }
+  assert.deepEqual(warnings, [], "Do not discard color precision to meet 128 KiB");
 });
 
 test("pic0.png retains 256 palette slots for stricter Vita shell expectations", async () => {

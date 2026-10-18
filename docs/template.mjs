@@ -1,7 +1,7 @@
-import { normalizeLayout } from "./geometry.mjs?v=1.29";
-import { frameRelativeOffsets } from "./template-preview.mjs?v=1.29";
-import { allFrameLayouts } from "./frame-model.mjs?v=1.29";
-import { getRcoLayout } from "./template-slots.mjs?v=1.29";
+import { normalizeLayout } from "./geometry.mjs?v=1.30";
+import { frameRelativeOffsets } from "./template-preview.mjs?v=1.30";
+import { allFrameLayouts } from "./frame-model.mjs?v=1.30";
+import { getRcoLayout } from "./template-slots.mjs?v=1.30";
 
 function escapeXml(value) {
   return String(value).replace(/[&<>"']/g, char => ({

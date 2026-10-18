@@ -489,6 +489,37 @@ try {
   assert.match(bundle.xml, /<startup-image>startup.png<\/startup-image>/);
   console.log("PASS: downloadable ZIP contains XML and PNG8 indexed assets with alpha");
 
+  const preservedIndexed = await evaluate(`(async () => {
+    const { buildLiveAreaPackage, encodeIndexedPng } = await import("./package.mjs");
+    const { readZipArchive, readArchiveEntry } = await import("./vpk.mjs");
+    const { DEFAULT_LAYOUT } = await import("./geometry.mjs");
+    const rgba = new Uint8Array(840 * 500 * 4);
+    for (let pixel = 0; pixel < 840 * 500; pixel++) {
+      const index = pixel * 4;
+      rgba[index] = pixel % 3 === 0 ? 35 : 140;
+      rgba[index + 1] = 100;
+      rgba[index + 2] = pixel % 3 === 0 ? 195 : 75;
+      rgba[index + 3] = 255;
+    }
+    const source = await encodeIndexedPng(840, 500, rgba, false);
+    const blob = new Blob([source], { type: "image/png" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      const zip = await readZipArchive(await buildLiveAreaPackage(DEFAULT_LAYOUT,
+        { card: { image, blob, name: "already-optimized.png" }, frames: {}, manual: [] }));
+      const exported = await readArchiveEntry(zip, "sce_sys/livearea/contents/bg0.png");
+      return { originalBytes: source.length, exportedBytes: exported.length,
+        unchanged: source.length === exported.length &&
+          source.every((value, i) => value === exported[i]) };
+    } finally { URL.revokeObjectURL(url); }
+  })()`);
+  assert.equal(preservedIndexed.unchanged, true,
+    "An already compatible, correctly sized opaque PNG8 must be copied byte for byte");
+  console.log("PASS: preoptimized PNG8 imported as background survives ZIP export unchanged");
+
   const ad0Bundle = await evaluate(`(async () => {
     const { buildLiveAreaPackage } = await import("./package.mjs");
     const { readZipArchive, readArchiveEntry } = await import("./vpk.mjs");
