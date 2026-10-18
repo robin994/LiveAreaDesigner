@@ -2,6 +2,7 @@
 #include "template_slots.h"
 #include "quantize.h"
 #include "png_passthrough.h"
+#include "png_lossless.h"
 
 #include <SDL.h>
 #include <SDL_image.h>
@@ -30,14 +31,13 @@ static void set_error(char *error, size_t size, const char *description) {
     if (size) snprintf(error, size, "%s", description);
 }
 
-static bool encode_png8(SDL_Surface *src, const char *filename, bool alpha,
-                        int max_colors, float dither, bool full_palette) {
+static uint8_t *surface_rgba(SDL_Surface *src) {
     const size_t bytes = (size_t)src->w * src->h * 4;
     uint8_t *rgba = (uint8_t *)malloc(bytes);
-    if (!rgba) return false;
+    if (!rgba) return NULL;
     if (SDL_MUSTLOCK(src) && SDL_LockSurface(src) != 0) {
         free(rgba);
-        return false;
+        return NULL;
     }
     for (int y = 0; y < src->h; y++) {
         uint8_t *dest = rgba + (size_t)y * src->w * 4;
@@ -56,6 +56,13 @@ static bool encode_png8(SDL_Surface *src, const char *filename, bool alpha,
         }
     }
     if (SDL_MUSTLOCK(src)) SDL_UnlockSurface(src);
+    return rgba;
+}
+
+static bool encode_png8(SDL_Surface *src, const char *filename, bool alpha,
+                        int max_colors, float dither, bool full_palette) {
+    uint8_t *rgba = surface_rgba(src);
+    if (!rgba) return false;
     LadIndexed indexed = {0};
     const bool quantized = lad_quantize_rgba(rgba, src->w, src->h,
                                              alpha, max_colors, dither, &indexed);
@@ -121,11 +128,15 @@ cleanup:
 }
 
 static bool export_picture(const char *source, const char *output,
-                           int width, int height, SDL_Color color, bool transparent) {
+                           int width, int height, SDL_Color color, bool transparent,
+                           bool lossless_frame1) {
     const char *basename = strrchr(output, '/');
     basename = basename ? basename + 1 : output;
     if (!transparent && strcmp(basename, "bg0.png") == 0 &&
         lad_copy_opaque_indexed_png(source, output, width, height, BG0_PNG_LIMIT))
+        return true;
+    if (lossless_frame1 &&
+        lad_copy_frame_png(source, output, width, height, transparent))
         return true;
 
     SDL_Surface *dst = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32,
@@ -141,13 +152,24 @@ static bool export_picture(const char *source, const char *output,
             SDL_FreeSurface(dst);
             return false;
         }
-        SDL_SetSurfaceBlendMode(image, SDL_BLENDMODE_BLEND);
+        /* When exporting transparent frame1, keep straight RGBA instead of
+           blending premultiplied RGB against the empty destination. */
+        SDL_SetSurfaceBlendMode(image, transparent && lossless_frame1 ?
+                                SDL_BLENDMODE_NONE : SDL_BLENDMODE_BLEND);
         if (SDL_BlitScaled(image, NULL, dst, NULL) < 0) {
             SDL_FreeSurface(image);
             SDL_FreeSurface(dst);
             return false;
         }
         SDL_FreeSurface(image);
+    }
+    if (lossless_frame1) {
+        uint8_t *rgba = surface_rgba(dst);
+        bool ok = rgba && lad_write_truecolor_png(rgba, width, height,
+                                                   transparent, output);
+        free(rgba);
+        SDL_FreeSurface(dst);
+        return ok;
     }
     size_t max_size = 0;
     if (strcmp(basename, "bg0.png") == 0)
@@ -214,7 +236,7 @@ static bool export_manual_pages(const DesignerConfig *cfg) {
         const char *slash = cfg->manual_dir[strlen(cfg->manual_dir) - 1] == '/' ? "" : "/";
         snprintf(from, sizeof(from), "%s%s%s", cfg->manual_dir, slash, names[i]);
         snprintf(to, sizeof(to), LAD_EXPORT_DIR "/sce_sys/manual/%03d.png", i + 1);
-        if (!export_picture(from, to, 960, 544, palette[8], false)) return false;
+        if (!export_picture(from, to, 960, 544, palette[8], false, false)) return false;
     }
     return true;
 }
@@ -237,14 +259,14 @@ bool lad_export_bundle(const DesignerConfig *cfg, char *error, size_t size) {
 
     snprintf(filename, sizeof(filename), "%s/bg0.png", CONTENTS_DIR);
     if (!export_picture(cfg->card_image, filename, 840, 500,
-                        palette[cfg->card_color], false)) {
+                        palette[cfg->card_color], false, false)) {
         set_error(error, size, "BG0.PNG EXPORT FAILED"); return false;
     }
 
     snprintf(filename, sizeof(filename), "%s/startup.png", CONTENTS_DIR);
     if (lad_template_layout(cfg->template_style)->has_gate) {
         if (!export_picture(cfg->gate_image, filename, 280, 158,
-                            palette[cfg->button_color], true)) {
+                            palette[cfg->button_color], true, false)) {
             set_error(error, size, "STARTUP.PNG EXPORT FAILED"); return false;
         }
     } else {
@@ -261,20 +283,21 @@ bool lad_export_bundle(const DesignerConfig *cfg, char *error, size_t size) {
         const int color = item.button_color >= 0 && item.button_color < LAD_PALETTE_COUNT
             ? item.button_color : 1;
         if (!export_picture(item.image, filename, item.w, item.h,
-                            palette[color], item.transparent_button != 0)) {
+                            palette[color], item.transparent_button != 0,
+                            frame == 1)) {
             set_error(error, size, "FRAME PNG EXPORT FAILED"); return false;
         }
     }
 
     if (cfg->icon_image[0]) {
         snprintf(filename, sizeof(filename), "%s/sce_sys/icon0.png", LAD_EXPORT_DIR);
-        if (!export_picture(cfg->icon_image, filename, 128, 128, palette[8], false)) {
+        if (!export_picture(cfg->icon_image, filename, 128, 128, palette[8], false, false)) {
             set_error(error, size, "ICON0.PNG EXPORT FAILED"); return false;
         }
     }
     if (cfg->boot_image[0]) {
         snprintf(filename, sizeof(filename), "%s/sce_sys/pic0.png", LAD_EXPORT_DIR);
-        if (!export_picture(cfg->boot_image, filename, 960, 544, palette[8], false)) {
+        if (!export_picture(cfg->boot_image, filename, 960, 544, palette[8], false, false)) {
             set_error(error, size, "PIC0.PNG EXPORT FAILED"); return false;
         }
     }

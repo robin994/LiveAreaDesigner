@@ -1,8 +1,8 @@
-import { CARD, PALETTE } from "./geometry.mjs?v=1.30";
-import { generateTemplate } from "./template.mjs?v=1.30";
-import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.30";
-import { getRcoLayout } from "./template-slots.mjs?v=1.30";
-import { quantizeRgba } from "./quantizer.mjs?v=1.30";
+import { CARD, PALETTE } from "./geometry.mjs?v=1.31";
+import { generateTemplate } from "./template.mjs?v=1.31";
+import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.31";
+import { getRcoLayout } from "./template-slots.mjs?v=1.31";
+import { quantizeRgba } from "./quantizer.mjs?v=1.31";
 
 const encoder = new TextEncoder();
 const SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
@@ -114,6 +114,71 @@ export async function encodeIndexedPng(width, height, rgba, allowTransparency = 
     ...(transparency ? [chunk("tRNS", transparency)] : []),
     chunk("IDAT", compressed), chunk("IEND", new Uint8Array())
   ]);
+}
+
+/** Frame1 uses lossless RGB/RGBA PNG, never a reduced-color palette. */
+export async function encodeTruecolorPng(width, height, rgba, transparency = false) {
+  if (!Number.isInteger(width) || !Number.isInteger(height) ||
+      width <= 0 || height <= 0 || rgba?.length !== width * height * 4)
+    throw new Error("Invalid frame1 RGBA image dimensions.");
+  if (typeof CompressionStream !== "function")
+    throw new Error("This browser cannot encode PNG images.");
+  const channels = transparency ? 4 : 3;
+  const stride = width * channels;
+  const pixels = new Uint8Array(stride * height);
+  for (let y = 0; y < height; y++) {
+    const row = y * stride;
+    const src = y * width * 4;
+    if (transparency) pixels.set(rgba.subarray(src, src + width * 4), row);
+    else for (let x = 0; x < width; x++)
+      pixels.set(rgba.subarray(src + 4 * x, src + 4 * x + 3), row + 3 * x);
+  }
+  const raw = new Uint8Array((stride + 1) * height);
+  const paeth = (a, b, c) => {
+    const p = a + b - c;
+    const da = Math.abs(p - a), db = Math.abs(p - b), dc = Math.abs(p - c);
+    return da <= db && da <= dc ? a : db <= dc ? b : c;
+  };
+  for (let y = 0; y < height; y++) {
+    let bestScore = Infinity, bestType = 0, bestRow = null;
+    for (let type = 0; type < 5; type++) {
+      const filtered = new Uint8Array(stride);
+      let score = 0;
+      for (let x = 0; x < stride; x++) {
+        const pos = y * stride + x;
+        const left = x < channels ? 0 : pixels[pos - channels];
+        const above = y === 0 ? 0 : pixels[pos - stride];
+        const upperLeft = y === 0 || x < channels ? 0 :
+          pixels[pos - stride - channels];
+        const prediction = type === 0 ? 0 : type === 1 ? left :
+          type === 2 ? above : type === 3 ? (left + above) >>> 1 :
+            paeth(left, above, upperLeft);
+        const delta = (pixels[pos] - prediction + 256) & 255;
+        filtered[x] = delta;
+        score += delta < 128 ? delta : 256 - delta;
+      }
+      if (score < bestScore) { bestScore = score; bestType = type; bestRow = filtered; }
+    }
+    const row = y * (stride + 1);
+    raw[row] = bestType;
+    raw.set(bestRow, row + 1);
+  }
+  // DEFLATE is a required, lossless part of the PNG format; it cannot change
+  // any pixel and is unrelated to PNG8's destructive palette quantization.
+  const compress = async data => new Uint8Array(await new Response(
+    new Blob([data]).stream().pipeThrough(new CompressionStream("deflate"))
+  ).arrayBuffer());
+  let data = await compress(raw);
+  const unfiltered = new Uint8Array(raw.length);
+  for (let y = 0; y < height; y++)
+    unfiltered.set(pixels.subarray(y * stride, (y + 1) * stride),
+      y * (stride + 1) + 1);
+  const simpler = await compress(unfiltered);
+  if (simpler.length < data.length) data = simpler;
+  const header = concat([u32be(width), u32be(height),
+    Uint8Array.of(8, transparency ? 6 : 2, 0, 0, 0)]);
+  return concat([SIGNATURE, chunk("IHDR", header), chunk("IDAT", data),
+    chunk("IEND", new Uint8Array())]);
 }
 
 /** ZIP store entries without compression (the images themselves are deflated). */
@@ -236,8 +301,48 @@ async function preserveOpaqueIndexedPng(source, width, height, maxBytes) {
   return palette && imageData && end && position === bytes.length ? bytes : null;
 }
 
+async function preserveFrame1Png(source, width, height, transparency) {
+  if (!source?.blob || !source?.image ||
+      source.image.naturalWidth !== width || source.image.naturalHeight !== height ||
+      !/\.png$/i.test(source.name || "")) return null;
+  const bytes = new Uint8Array(await source.blob.arrayBuffer());
+  if (bytes.length < 65 || !SIGNATURE.every((part, i) => part === bytes[i]))
+    return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const colorType = bytes[25];
+  if (view.getUint32(8) !== 13 || view.getUint32(12) !== 0x49484452 ||
+      view.getUint32(16) !== width || view.getUint32(20) !== height ||
+      bytes[24] !== 8 || ![0, 2, 3, 4, 6].includes(colorType) ||
+      bytes[28] !== 0 || (!transparency && [4, 6].includes(colorType))) return null;
+  let position = 8, palette = false, imageData = false, end = false;
+  while (position + 12 <= bytes.length) {
+    const size = view.getUint32(position);
+    if (size > bytes.length - position - 12) return null;
+    const type = view.getUint32(position + 4);
+    if (type === 0x74524e53 && !transparency) return null;
+    if (type === 0x504c5445) palette = size > 0 && size <= 768 && size % 3 === 0;
+    if (type === 0x49444154) imageData = true;
+    position += size + 12;
+    if (type === 0x49454e44) { end = true; break; }
+  }
+  // The decoded browser image validates the PNG; skip an unnecessary encode
+  // only when dimensions, bit depth and alpha semantics already match.
+  return imageData && end && position === bytes.length &&
+    (colorType !== 3 || palette) ? bytes : null;
+}
+
 async function addImage(entries, filename, w, h, color, image, transparency,
-                        placeholder = false, optimization = true, warnings = []) {
+                        placeholder = false, optimization = true, warnings = [],
+                        losslessFrame1 = false) {
+  if (losslessFrame1) {
+    const preserved = await preserveFrame1Png(image, w, h, transparency);
+    const png = preserved || await encodeTruecolorPng(w, h,
+      artwork(w, h, color, image, transparency, placeholder), transparency);
+    if (png.length > 384 * 1024)
+      warnings.push("frame1.png: lossless full-color image is large; confirm it renders on a real Vita.");
+    entries.push({ name: filename, data: png });
+    return;
+  }
   const maxBytes = filename.endsWith("/bg0.png") ? 384 * 1024 : Infinity;
   if (!transparency && image && maxBytes !== Infinity) {
     const preserved = await preserveOpaqueIndexedPng(image, w, h, maxBytes);
@@ -273,7 +378,7 @@ export async function buildLiveAreaPackage(layout, images, frameLayouts = {},
     await addImage(entries, root + `frame${item.frameId}.png`, item.w, item.h,
       PALETTE[item.buttonColor].hex,
       images.frames?.[key] ?? (item.frameId === layout.frameId ? images.button : null),
-      item.transparentButton, false, optimizeImages, warnings);
+      item.transparentButton, false, optimizeImages, warnings, item.frameId === 1);
   }
   if (images.icon) await addImage(entries, "sce_sys/icon0.png", 128, 128, "#000000",
     images.icon, false, false, optimizeImages, warnings);

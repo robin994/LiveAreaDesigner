@@ -4,8 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 
-bool lad_copy_opaque_indexed_png(const char *source, const char *destination,
-                                 int width, int height, size_t maximum_bytes) {
+static bool copy_compatible_png(const char *source, const char *destination,
+                                int width, int height, size_t maximum_bytes,
+                                bool indexed_only, bool allow_transparency) {
     if (!source || !destination || !*source || width <= 0 || height <= 0)
         return false;
 
@@ -53,14 +54,21 @@ bool lad_copy_opaque_indexed_png(const char *source, const char *destination,
         goto close_reader;
     png_colorp palette = NULL;
     int palette_count = 0;
+    const bool indexed = color == PNG_COLOR_TYPE_PALETTE;
+    const bool valid_color = indexed_only ? indexed :
+        color == PNG_COLOR_TYPE_PALETTE || color == PNG_COLOR_TYPE_RGB ||
+        color == PNG_COLOR_TYPE_RGB_ALPHA || color == PNG_COLOR_TYPE_GRAY ||
+        color == PNG_COLOR_TYPE_GRAY_ALPHA;
+    const bool has_alpha = (color & PNG_COLOR_MASK_ALPHA) != 0 ||
+                           png_get_valid(reader, info, PNG_INFO_tRNS);
     compatible =
         image_width == (png_uint_32)width &&
         image_height == (png_uint_32)height &&
-        depth == 8 && color == PNG_COLOR_TYPE_PALETTE &&
+        depth == 8 && valid_color &&
         interlace == PNG_INTERLACE_NONE &&
-        png_get_PLTE(reader, info, &palette, &palette_count) &&
-        palette_count >= 1 && palette_count <= 256 &&
-        !png_get_valid(reader, info, PNG_INFO_tRNS);
+        (!indexed || (png_get_PLTE(reader, info, &palette, &palette_count) &&
+          palette_count >= 1 && palette_count <= 256)) &&
+        (allow_transparency || !has_alpha);
 
 close_reader:
     png_destroy_read_struct(&reader, &info, NULL);
@@ -93,4 +101,16 @@ close_reader:
     if (fclose(output) != 0) success = false;
     if (!success) remove(destination);
     return success;
+}
+
+bool lad_copy_opaque_indexed_png(const char *source, const char *destination,
+                                int width, int height, size_t maximum_bytes) {
+    return copy_compatible_png(source, destination, width, height,
+                               maximum_bytes, true, false);
+}
+
+bool lad_copy_frame_png(const char *source, const char *destination,
+                        int width, int height, bool allow_transparency) {
+    return copy_compatible_png(source, destination, width, height, 0,
+                               false, allow_transparency);
 }

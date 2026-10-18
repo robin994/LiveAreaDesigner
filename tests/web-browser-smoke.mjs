@@ -483,11 +483,12 @@ try {
   ]);
   for (const asset of bundle.assets.filter(asset => asset.name.endsWith(".png"))) {
     assert.equal(asset.depth, 8);
-    assert.equal(asset.colorType, 3);
+    assert.equal(asset.colorType, asset.name.endsWith("/frame1.png") ? 2 : 3,
+      "Only frame1 is exported as full-color PNG");
   }
   assert.equal(bundle.assets.at(-1).transparency, true);
   assert.match(bundle.xml, /<startup-image>startup.png<\/startup-image>/);
-  console.log("PASS: downloadable ZIP contains XML and PNG8 indexed assets with alpha");
+  console.log("PASS: downloadable ZIP contains XML, full-color frame1 and PNG8 assets");
 
   const preservedIndexed = await evaluate(`(async () => {
     const { buildLiveAreaPackage, encodeIndexedPng } = await import("./package.mjs");
@@ -519,6 +520,58 @@ try {
   assert.equal(preservedIndexed.unchanged, true,
     "An already compatible, correctly sized opaque PNG8 must be copied byte for byte");
   console.log("PASS: preoptimized PNG8 imported as background survives ZIP export unchanged");
+
+  const losslessFrame = await evaluate(`(async () => {
+    const { buildLiveAreaPackage, encodeTruecolorPng } = await import("./package.mjs");
+    const { readZipArchive, readArchiveEntry } = await import("./vpk.mjs");
+    const { makeFrameLayout } = await import("./frame-model.mjs");
+    const layout = makeFrameLayout("a1", 1);
+    const w = layout.w, h = layout.h;
+    const rgba = new Uint8Array(w * h * 4);
+    for (let i = 0; i < w * h; i++) {
+      rgba[i * 4] = (i * 7) & 255;
+      rgba[i * 4 + 1] = (i * 31 + (i >>> 8)) & 255;
+      rgba[i * 4 + 2] = (i * 17 + (i >>> 5)) & 255;
+      rgba[i * 4 + 3] = 255;
+    }
+    const source = await encodeTruecolorPng(w, h, rgba);
+    const blob = new Blob([source], { type: "image/png" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      const frames = { "a1:1": { name: "frame1-source.png", blob, image },
+        "a1:2": { name: "frame2-source.png", blob, image } };
+      const zip = await readZipArchive(await buildLiveAreaPackage(layout,
+        { frames, manual: [] }));
+      const first = await readArchiveEntry(zip, "sce_sys/livearea/contents/frame1.png");
+      const second = await readArchiveEntry(zip, "sce_sys/livearea/contents/frame2.png");
+      const resized = await readZipArchive(await buildLiveAreaPackage(
+        { ...layout, w: w - 10 }, { frames, manual: [] }));
+      const firstResized = await readArchiveEntry(resized,
+        "sce_sys/livearea/contents/frame1.png");
+      return {
+        unchanged: first.length === source.length &&
+          first.every((byte, i) => byte === source[i]),
+        firstType: first[25], secondType: second[25],
+        resizedType: firstResized[25],
+        resizedWidth: new DataView(firstResized.buffer,
+          firstResized.byteOffset, firstResized.byteLength).getUint32(16),
+        largeColors: new Set(Array.from({ length: w * h },
+          (_, i) => [rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]].join(","))).size
+      };
+    } finally { URL.revokeObjectURL(url); }
+  })()`);
+  assert.ok(losslessFrame.largeColors > 256);
+  assert.equal(losslessFrame.unchanged, true,
+    "Frame1 source PNG must be copied without any recompression or color change");
+  assert.equal(losslessFrame.firstType, 2, "Frame1 should retain truecolor PNG");
+  assert.equal(losslessFrame.secondType, 3, "Frame2 must remain indexed PNG8");
+  assert.equal(losslessFrame.resizedType, 2,
+    "A resized frame1 must stay truecolor without palette quantization");
+  assert.equal(losslessFrame.resizedWidth, 250);
+  console.log("PASS: frame1 lossless original PNG and truecolor resize; other frames remain PNG8");
 
   const ad0Bundle = await evaluate(`(async () => {
     const { buildLiveAreaPackage } = await import("./package.mjs");

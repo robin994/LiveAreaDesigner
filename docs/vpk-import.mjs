@@ -1,7 +1,7 @@
-import { CARD, DEFAULT_LAYOUT, normalizeLayout } from "./geometry.mjs?v=1.30";
-import { makeFrameLayout, frameKey } from "./frame-model.mjs?v=1.30";
-import { RCO_LAYOUTS, getRcoLayout } from "./template-slots.mjs?v=1.30";
-import { readArchiveEntry } from "./vpk.mjs?v=1.30";
+import { CARD, DEFAULT_LAYOUT, normalizeLayout } from "./geometry.mjs?v=1.31";
+import { makeFrameLayout, frameKey } from "./frame-model.mjs?v=1.31";
+import { RCO_LAYOUTS, getRcoLayout } from "./template-slots.mjs?v=1.31";
+import { readArchiveEntry } from "./vpk.mjs?v=1.31";
 
 const CONTENTS = "sce_sys/livearea/contents/";
 const decode = new TextDecoder("utf-8", { fatal: true });

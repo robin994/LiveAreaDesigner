@@ -1,4 +1,4 @@
-import { frameCount } from "./template-slots.mjs?v=1.30";
+import { frameCount } from "./template-slots.mjs?v=1.31";
 
 export const SCREEN = Object.freeze({ width: 960, height: 544 });
 export const CARD = Object.freeze({ x: 60, y: 44, width: 840, height: 500 });

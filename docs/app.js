@@ -3,19 +3,19 @@ import {
   editorOffsets, cardPositionFromEditorOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
-} from "./geometry.mjs?v=1.30";
-import { generateTemplate } from "./template.mjs?v=1.30";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.30";
+} from "./geometry.mjs?v=1.31";
+import { generateTemplate } from "./template.mjs?v=1.31";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.31";
 import {
   previewGate, previewFrames, previewSummary, frameRelativeOffsets,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
-} from "./template-preview.mjs?v=1.30";
+} from "./template-preview.mjs?v=1.31";
 import {
   frameKey, frameLayoutFor, allFrameLayouts, clampLiveitemToFrame
-} from "./frame-model.mjs?v=1.30";
-import { readVpk, patchVpk } from "./vpk.mjs?v=1.30";
-import { readVpkProject } from "./vpk-import.mjs?v=1.30";
-import { getRcoLayout } from "./template-slots.mjs?v=1.30";
+} from "./frame-model.mjs?v=1.31";
+import { readVpk, patchVpk } from "./vpk.mjs?v=1.31";
+import { readVpkProject } from "./vpk-import.mjs?v=1.31";
+import { getRcoLayout } from "./template-slots.mjs?v=1.31";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";
@@ -451,6 +451,7 @@ function updateInterface() {
   const noGate = getRcoLayout(layout.templateStyle).gate === null;
   document.getElementById("gate-drop").hidden = noGate;
   document.getElementById("gate-unavailable").hidden = !noGate;
+  document.getElementById("frame1-lossless-note").hidden = layout.frameId !== 1;
 
   elements.move.classList.toggle("is-active", state.mode === "move");
   elements.resize.classList.toggle("is-active", state.mode === "resize");
@@ -946,7 +947,7 @@ async function downloadPackage() {
     const pack = await buildLiveAreaPackage(state.layout, state.images, state.frameLayouts,
       { optimizeImages: state.optimizeImages, warnings });
     downloadBlob(pack, "LiveAreaDesigner-assets.zip");
-    notice(`LiveArea ZIP exported (${Math.round(pack.size / 1024)} KiB; adaptive PNG8).` +
+    notice(`LiveArea ZIP exported (${Math.round(pack.size / 1024)} KiB; lossless frame1 + optimized PNG8).` +
       (warnings.length ? ` Size-limit adjustment: ${warnings.join(" ")}` : ""));
   } catch (error) {
     notice(error.message || "Unable to export LiveArea assets.");
@@ -1044,7 +1045,7 @@ async function downloadModifiedVpk() {
   const button = document.getElementById("save-vpk");
   const statusLine = document.getElementById("vpk-status");
   button.disabled = true;
-  statusLine.textContent = "Compressing PNG8 images and repacking VPK locally…";
+  statusLine.textContent = "Preserving frame1 colors, optimizing other PNG8 images, and repacking VPK locally…";
   try {
     const warnings = [];
     const assets = await buildLiveAreaPackage(state.layout, state.images,

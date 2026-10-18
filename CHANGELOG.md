@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.31 - 2026-10-18 (frame1 without lossy compression)
+
+- Frame1 images are no longer reduced to an indexed 256-color palette. Both web and Vita now export frame1 as full-color 8-bit RGB/RGBA PNG with no loss of pixel values.
+- An existing, correctly sized and alpha-compatible 8-bit PNG is copied byte for byte, including its original pixels and alpha. If resizing, compositing or JPG conversion is needed, frame1 is re-encoded as RGB/RGBA without palette reduction.
+- Only frame1 changes: the other frames, gate, backgrounds and icons retain their optimized PNG8 behavior.
+- PNG's mandatory DEFLATE stage is **lossless**; eliminating that step would not improve image quality or produce a valid PNG.
+- This is an experimental hardware compatibility path. Some stock Sony LiveArea frame images use 8-bit RGBA, but large truecolor frame assets still require testing on a real PS Vita. Web exports warn when frame1 is unusually large.
+- Added pixel-perfect RGB/RGBA encoding and PNG pass-through tests, and a browser ZIP regression test contrasting full-color frame1 against indexed frame2.
+
 ## v1.30 - 2026-10-18 (TinyPNG-quality compatibility and faithful asset reuse)
 
 - **Removed the artificial 128 KiB ceiling for bg0.png.** A read-only inspection of a real PS Vita firmware installation found stock Sony 840x500, indexed PNG8 backgrounds up to **369,340 bytes**. The previous exporter cap forced unnecessary dithering/color reduction. The editor now accepts indexed bg0 up to **384 KiB**, a conservative envelope based on observed firmware assets, not a claimed universal Sony limit.

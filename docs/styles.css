@@ -316,7 +316,7 @@ kbd {
   margin-left: 8px; font-size: 10px; font-weight: 500; color: #8799b1;
 }
 .advanced-collapse[open] summary { margin-bottom: 12px; }
-.asset-card[hidden], #gate-unavailable[hidden] { display: none; }
+.asset-card[hidden], #gate-unavailable[hidden], #frame1-lossless-note[hidden] { display: none; }
 .advanced-collapse .inspector-section { border-bottom: 0; padding-bottom: 0; }
 .export-compression { margin: 14px 0 9px; }
 

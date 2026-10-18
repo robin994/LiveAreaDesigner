@@ -9,4 +9,9 @@
 bool lad_copy_opaque_indexed_png(const char *source, const char *destination,
                                  int width, int height, size_t maximum_bytes);
 
+/* Frame1: retain a compatible 8-bit PNG (indexed, RGB or RGBA) exactly as
+   provided when its dimensions and transparency mode already match. */
+bool lad_copy_frame_png(const char *source, const char *destination,
+                        int width, int height, bool allow_transparency);
+
 #endif
