@@ -1,4 +1,4 @@
-import { frameCount } from "./template-slots.mjs?v=1.31";
+import { frameCount } from "./template-slots.mjs?v=1.32";
 
 export const SCREEN = Object.freeze({ width: 960, height: 544 });
 export const CARD = Object.freeze({ x: 60, y: 44, width: 840, height: 500 });
@@ -35,6 +35,7 @@ export const DEFAULT_LAYOUT = Object.freeze({
   lockAspect: false,
   aspectRatio: 286 / 168,
   transparentButton: false,
+  includeGate: false,
   templateStyle: "a1",
   frameId: 3,
   frameTarget: "https://example.com",
@@ -75,6 +76,7 @@ export function normalizeLayout(input = {}) {
     lockAspect: input.lockAspect === true,
     aspectRatio,
     transparentButton: input.transparentButton === true,
+    includeGate: input.includeGate === true,
     templateStyle,
     frameId: clamp(numberOr(input.frameId, DEFAULT_LAYOUT.frameId), 1, frameCount(templateStyle)),
     frameTarget: typeof input.frameTarget === "string" ? input.frameTarget.slice(0, 240) : DEFAULT_LAYOUT.frameTarget,

@@ -3,19 +3,19 @@ import {
   editorOffsets, cardPositionFromEditorOffsets,
   normalizeLayout, offsets, buttonOnScreen, toCanvasPoint, hitTest,
   dragLayout, stepLayout
-} from "./geometry.mjs?v=1.31";
-import { generateTemplate } from "./template.mjs?v=1.31";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.31";
+} from "./geometry.mjs?v=1.32";
+import { generateTemplate } from "./template.mjs?v=1.32";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.32";
 import {
-  previewGate, previewFrames, previewSummary, frameRelativeOffsets,
+  previewGate, previewFrames, previewSummary, frameRelativeOffsets, hasStartupGate,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
-} from "./template-preview.mjs?v=1.31";
+} from "./template-preview.mjs?v=1.32";
 import {
   frameKey, frameLayoutFor, allFrameLayouts, clampLiveitemToFrame
-} from "./frame-model.mjs?v=1.31";
-import { readVpk, patchVpk } from "./vpk.mjs?v=1.31";
-import { readVpkProject } from "./vpk-import.mjs?v=1.31";
-import { getRcoLayout } from "./template-slots.mjs?v=1.31";
+} from "./frame-model.mjs?v=1.32";
+import { readVpk, patchVpk } from "./vpk.mjs?v=1.32";
+import { readVpkProject } from "./vpk-import.mjs?v=1.32";
+import { getRcoLayout } from "./template-slots.mjs?v=1.32";
 
 const PREFS_KEY = "livearea-designer-web-v1";
 const ASSETS_DB = "livearea-designer-assets";
@@ -448,9 +448,14 @@ function updateInterface() {
     updateAssetUI(target);
   }
   for (const target of ["gate", "icon", "boot"]) updateAssetUI(target);
-  const noGate = getRcoLayout(layout.templateStyle).gate === null;
-  document.getElementById("gate-drop").hidden = noGate;
-  document.getElementById("gate-unavailable").hidden = !noGate;
+  const noNativeGate = getRcoLayout(layout.templateStyle).gate === null;
+  const activeGate = hasStartupGate(layout);
+  document.getElementById("gate-override-option").hidden = !noNativeGate;
+  document.getElementById("gate-override").checked = layout.includeGate;
+  document.getElementById("gate-drop").hidden = !activeGate;
+  document.getElementById("gate-unavailable").hidden = activeGate;
+  document.getElementById("gate-image-label").textContent = noNativeGate ?
+    "Gate startup image (manual / unverified)" : "Gate startup image (fixed)";
   document.getElementById("frame1-lossless-note").hidden = layout.frameId !== 1;
 
   elements.move.classList.toggle("is-active", state.mode === "move");
@@ -504,7 +509,10 @@ function setLayout(next, persist = true) {
       null, state.frameLayouts);
     state.layout = normalizeLayout({
       ...restored, cardColor: wanted.cardColor,
-      templateStyle: wanted.templateStyle, frameId: wanted.frameId
+      templateStyle: wanted.templateStyle, frameId: wanted.frameId,
+      // A gate belongs to the LiveArea style, not to the selected frame.
+      includeGate: wanted.templateStyle === state.layout.templateStyle ?
+        state.layout.includeGate : restored.includeGate
     });
     state.images.button = state.images.frames[after] || null;
   } else {
@@ -660,9 +668,11 @@ function drawTemplateElements(ctx2d, layout) {
     ctx2d.fillStyle = "#13223ce8";
     roundedBox(ctx2d, gate.x - 5, gate.y - 5, gate.w + 10, gate.h + 38, 13);
     ctx2d.fill();
-    ctx2d.strokeStyle = "#fff6dbd9";
+    ctx2d.strokeStyle = gate.estimated ? "#ffca7dd9" : "#fff6dbd9";
     ctx2d.lineWidth = 2;
+    if (gate.estimated) ctx2d.setLineDash([7, 5]);
     ctx2d.stroke();
+    ctx2d.setLineDash([]);
     if (state.images.gate?.image) {
       ctx2d.drawImage(state.images.gate.image, gate.x, gate.y, gate.w, gate.h);
     } else {
@@ -675,7 +685,8 @@ function drawTemplateElements(ctx2d, layout) {
       ctx2d.fillStyle = "#eeebff";
       ctx2d.font = '700 18px "Space Grotesk", sans-serif';
       ctx2d.textAlign = "center";
-      ctx2d.fillText("STARTUP IMAGE", gate.x + gate.w / 2, gate.y + gate.h / 2);
+      ctx2d.fillText(gate.estimated ? "MANUAL GATE (PREVIEW ONLY)" : "STARTUP IMAGE",
+        gate.x + gate.w / 2, gate.y + gate.h / 2, gate.w - 12);
     }
     roundedBox(ctx2d, gate.x + 54, gate.y + gate.h + 3, gate.w - 108, 24, 12);
     ctx2d.fillStyle = "#48a5ea";
@@ -684,6 +695,12 @@ function drawTemplateElements(ctx2d, layout) {
     ctx2d.textAlign = "center";
     ctx2d.font = '700 12px "Space Grotesk", sans-serif';
     ctx2d.fillText("START", gate.x + gate.w / 2, gate.y + gate.h + 15);
+    if (gate.estimated) {
+      ctx2d.fillStyle = "#ffd6a0";
+      ctx2d.font = '700 10px "Space Grotesk", sans-serif';
+      ctx2d.fillText("POSITION NOT VERIFIED ON VITA", gate.x + gate.w / 2,
+        gate.y - 15, gate.w + 24);
+    }
   }
   ctx2d.restore();
 }
@@ -1055,7 +1072,7 @@ async function downloadModifiedVpk() {
     if (state.images.card?.fromVpkPath &&
         state.layout.cardColor === state.importedCardColor)
       preserve.set(root + "bg0.png", state.images.card.fromVpkPath);
-    if (getRcoLayout(state.layout.templateStyle).gate !== null &&
+    if (hasStartupGate(state.layout) &&
         state.images.gate?.fromVpkPath)
       preserve.set(root + "startup.png", state.images.gate.fromVpkPath);
     for (const item of allFrameLayouts(state.layout, state.frameLayouts)) {
@@ -1139,6 +1156,12 @@ function bindEditor() {
   document.getElementById("optimize-png").addEventListener("change", event => {
     state.optimizeImages = event.target.checked;
     savePreferences();
+  });
+  document.getElementById("gate-override").addEventListener("change", event => {
+    setLayout({ ...state.layout, includeGate: event.target.checked });
+    notice(event.target.checked ?
+      "Manual gate enabled. Its placement in this style is unverified on Vita." :
+      "Manual gate disabled; startup.png is omitted from export.");
   });
   const vpkInput = document.getElementById("vpk-file");
   document.getElementById("open-vpk").addEventListener("click", () => vpkInput.click());

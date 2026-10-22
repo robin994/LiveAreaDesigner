@@ -1,5 +1,14 @@
 # Changelog
 
+## Web Editor 1.32 - 2026-10-22 (manual gate for ad0, issue #1)
+
+- **Optional startup gate for ad0 and other styles without a native RCO gate slot.** The web editor offers an explicit **Include startup gate manually** checkbox. When enabled it unlocks the image uploader, includes the gate/startup-image tags in template.xml and packages startup.png into the ZIP or modified VPK.
+- **Default is unchanged:** ad0 emits no gate or startup image unless explicitly enabled. Disabling the gate does not delete uploaded artwork from browser storage.
+- Importing an existing VPK whose XML already contains a gate for a gate-less style activates the manual option automatically. It persists across reloads and style/frame changes.
+- Previewing a manually configured gate uses an **estimated, labeled position**, not a native RCO coordinate; hardware placement and visibility are unverified.
+- **Web-only fix.** The native PS Vita VPK remains v1.31 pending on-device verification.
+- Added XML, ZIP, import, UI persistence and Chrome desktop/mobile regression tests.
+
 ## v1.31 - 2026-10-18 (frame1 without lossy compression)
 
 - Frame1 images are no longer reduced to an indexed 256-color palette. Both web and Vita now export frame1 as full-color 8-bit RGB/RGBA PNG with no loss of pixel values.

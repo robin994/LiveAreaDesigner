@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=1.31">
-  <script type="module" src="./app.js?v=1.31"></script>
+  <link rel="stylesheet" href="./styles.css?v=1.32">
+  <script type="module" src="./app.js?v=1.32"></script>
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -23,11 +23,11 @@
       <span class="brand-name">LIVEAREA <strong>DESIGNER</strong><small>PS VITA DESIGN TOOL</small></span>
     </a>
     <div class="header-right">
-      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.31</span>
+      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.32</span>
       <a class="header-link" href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">
         GitHub <span aria-hidden="true">↗</span>
       </a>
-      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.31" target="_blank" rel="noopener noreferrer">
+      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.31" title="Native Vita VPK v1.31; the optional manual gate is currently web-only" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 17v3h16v-3"/></svg>
         Download VPK
       </a>
@@ -179,10 +179,16 @@
             <input id="button-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
           </div>
           <p class="section-note" id="frame1-lossless-note" hidden>Frame1: no lossy color reduction. Original PNG is preserved at matching dimensions; otherwise a full-color RGB/RGBA PNG is exported. Large images may need hardware testing.</p>
+          <label class="editor-check" id="gate-override-option" hidden>
+            <input id="gate-override" type="checkbox">
+            <span>Include startup gate manually
+              <small>Experimental for ad0 and other styles without a native gate slot. Adds the gate to template.xml and exports startup.png; actual placement on PS Vita is unverified.</small>
+            </span>
+          </label>
           <div class="asset-card" id="gate-drop">
             <div class="asset-topline">
               <div class="asset-thumb" id="gate-thumb"><span class="asset-thumb-icon" aria-hidden="true">▣</span></div>
-              <div class="asset-name"><strong>Gate startup image (fixed)</strong><span id="gate-filename" title="No file selected">No image selected</span></div>
+              <div class="asset-name"><strong id="gate-image-label">Gate startup image (fixed)</strong><span id="gate-filename" title="No file selected">No image selected</span></div>
               <span class="asset-tag">280 × 158</span>
             </div>
             <div class="asset-buttons">
@@ -191,7 +197,7 @@
             </div>
             <input id="gate-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
           </div>
-          <p class="section-note" id="gate-unavailable" hidden>This layout has no startup gate; no gate image is exported.</p>
+          <p class="section-note" id="gate-unavailable" hidden>No gate is defined in this style's RCO. Enable the manual option above to include a startup gate in the XML and export.</p>
           <details class="extra-assets"><summary>Additional LiveArea assets (optional)</summary>
             <div class="asset-card" id="icon-drop">
               <div class="asset-topline"><div class="asset-thumb" id="icon-thumb"><span class="asset-thumb-icon">▧</span></div>

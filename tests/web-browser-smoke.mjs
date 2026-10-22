@@ -594,8 +594,68 @@ try {
     style.dispatchEvent(new Event("input", { bubbles: true }));
   })()`);
   await waitFor(() => evaluate(
-    'document.getElementById("gate-drop").hidden && !document.getElementById("gate-unavailable").hidden'
-  ), "gate controls hidden when ad0 is selected");
+    'document.getElementById("gate-drop").hidden && !document.getElementById("gate-unavailable").hidden && !document.getElementById("gate-override-option").hidden'
+  ), "manual gate option available but disabled by default on ad0");
+  assert.equal(await evaluate('document.getElementById("gate-override").checked'), false);
+  await evaluate('document.getElementById("gate-override").click()');
+  await waitFor(() => evaluate(
+    '!document.getElementById("gate-drop").hidden && document.getElementById("gate-override").checked'
+  ), "manual ad0 gate checkbox enables the image upload");
+  await send("Page.reload", { ignoreCache: true });
+  await waitFor(() => evaluate(
+    'document.getElementById("xml-style").value === "ad0" && document.getElementById("gate-override").checked && !document.getElementById("gate-drop").hidden'
+  ), "manual gate preference persists after a full browser refresh");
+  const customGateBundle = await evaluate(`(async () => {
+    const { buildLiveAreaPackage } = await import("./package.mjs");
+    const { generateTemplate } = await import("./template.mjs");
+    const { parseVpkTemplate } = await import("./vpk-import.mjs");
+    const { readZipArchive, readArchiveEntry } = await import("./vpk.mjs");
+    const { previewGate, previewSummary } = await import("./template-preview.mjs");
+    const saved = JSON.parse(localStorage.getItem("livearea-designer-web-v1"));
+    const layout = saved.layout;
+    const blob = await buildLiveAreaPackage(layout,
+      { card: null, button: null, frames: {}, gate: null, manual: [] }, saved.frameLayouts);
+    const zip = await readZipArchive(blob);
+    const xml = new TextDecoder().decode(await readArchiveEntry(zip,
+      "sce_sys/livearea/contents/template.xml"));
+    const startup = await readArchiveEntry(zip,
+      "sce_sys/livearea/contents/startup.png");
+    const imported = parseVpkTemplate(xml);
+    return {
+      includeGate: layout.includeGate,
+      xml, names: zip.entries.map(entry => entry.name),
+      startupSize: [new DataView(startup.buffer, startup.byteOffset,
+        startup.byteLength).getUint32(16), new DataView(startup.buffer,
+        startup.byteOffset, startup.byteLength).getUint32(20)],
+      startupType: startup[25],
+      parsedIncludeGate: imported.layout.includeGate,
+      nativeGateEstimated: previewGate(layout).estimated,
+      previewLabel: previewSummary(layout).gateDescription,
+      regenerated: generateTemplate(imported.layout, imported.frameLayouts)
+    };
+  })()`);
+  assert.equal(customGateBundle.includeGate, true);
+  assert.equal(customGateBundle.parsedIncludeGate, true);
+  assert.equal(customGateBundle.nativeGateEstimated, true);
+  assert.match(customGateBundle.previewLabel, /placement unverified/);
+  assert.match(customGateBundle.xml,
+    /<gate>\s*<startup-image>startup\.png<\/startup-image>\s*<\/gate>/);
+  assert.match(customGateBundle.regenerated, /<startup-image>startup\.png<\/startup-image>/);
+  assert.equal((customGateBundle.xml.match(/<frame id=/g) || []).length, 1);
+  assert.deepEqual(customGateBundle.startupSize, [280, 158]);
+  assert.equal(customGateBundle.startupType, 3);
+  assert.ok(customGateBundle.names.some(name => name.endsWith("/startup.png")));
+  await evaluate('document.getElementById("gate-override").click()');
+  const disabledBundle = await evaluate(`(async () => {
+    const { buildLiveAreaPackage } = await import("./package.mjs");
+    const { readZipArchive } = await import("./vpk.mjs");
+    const project = JSON.parse(localStorage.getItem("livearea-designer-web-v1"));
+    const zip = await readZipArchive(await buildLiveAreaPackage(project.layout,
+      { card: null, button: null, frames: {}, gate: null, manual: [] }, project.frameLayouts));
+    return zip.entries.map(entry => entry.name);
+  })()`);
+  assert.ok(!disabledBundle.some(name => name.endsWith("/startup.png")));
+  await evaluate('document.getElementById("gate-override").click()');
   await evaluate(`(() => {
     const style = document.getElementById("xml-style");
     style.value = "a2";
@@ -603,6 +663,21 @@ try {
   })()`);
   await waitFor(() => evaluate('!document.getElementById("gate-drop").hidden'),
     "gate controls restored for a gated style");
+  assert.equal(await evaluate('document.getElementById("gate-override-option").hidden'), true);
+  await evaluate(`(() => {
+    const style = document.getElementById("xml-style");
+    style.value = "ad0";
+    style.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate(
+    'document.getElementById("gate-override").checked && !document.getElementById("gate-drop").hidden'
+  ), "manual ad0 gate selection persists when switching between styles");
+  await evaluate(`(() => {
+    document.getElementById("gate-override").click();
+    const style = document.getElementById("xml-style");
+    style.value = "a2";
+    style.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
   await waitFor(() => evaluate('document.getElementById("xml-frame").options.length === 3'),
     "restore a2 native frame options");
   await evaluate(`(() => {
@@ -612,7 +687,30 @@ try {
   })()`);
   await waitFor(() => evaluate('document.getElementById("xml-frame").value === "3"'),
     "restore selected frame after testing ad0");
-  console.log("PASS: ad0 gate-less XML, ZIP assets and live editor UI");
+  await evaluate(`(() => {
+    const style = document.getElementById("xml-style");
+    style.value = "music";
+    style.dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById("gate-override").click();
+    const frame = document.getElementById("xml-frame");
+    frame.value = "2";
+    frame.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate(
+    'document.getElementById("xml-frame").value === "2" && document.getElementById("gate-override").checked'
+  ), "manual gate setting is shared by all frames in a gate-less style");
+  await evaluate(`(() => {
+    document.getElementById("gate-override").click();
+    const style = document.getElementById("xml-style");
+    style.value = "a2";
+    style.dispatchEvent(new Event("input", { bubbles: true }));
+    const frame = document.getElementById("xml-frame");
+    frame.value = "3";
+    frame.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("xml-frame").value === "3"'),
+    "re-select a2 frame3 after testing style-wide gate override");
+  console.log("PASS: ad0 gate-free default, optional manual gate, PNG export, VPK XML import and UI persistence");
 
   const downloads = join(temp, "downloads");
   await mkdir(downloads, { recursive: true });

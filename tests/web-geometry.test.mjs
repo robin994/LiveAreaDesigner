@@ -208,6 +208,27 @@ test("ad0 and other gate-less layouts emit no gate or startup-image", () => {
   assert.match(gated, /<gate>\s*<startup-image>startup\.png<\/startup-image>\s*<\/gate>/);
 });
 
+test("an explicitly enabled gate is retained in ad0 without affecting the default", () => {
+  const layout = normalizeLayout({ ...makeFrameLayout("ad0", 1),
+    includeGate: true });
+  assert.equal(layout.includeGate, true);
+  assert.equal(getRcoLayout("ad0").gate, null);
+  const xml = generateTemplate(layout);
+  assert.match(xml, /<livearea style="ad0"/);
+  assert.match(xml, /<gate>\s*<startup-image>startup\.png<\/startup-image>\s*<\/gate>/);
+  assert.equal((xml.match(/<frame id=/g) || []).length, 1);
+  assert.match(xml, /<frame id="frame1"/);
+  assert.match(xml, /<target>psla:eboot<\/target>/);
+  const gate = previewGate(layout);
+  assert.equal(gate.estimated, true);
+  assert.match(previewSummary(layout).gateDescription, /placement unverified/);
+  assert.doesNotMatch(generateTemplate({ ...layout, includeGate: false }), /<gate>/);
+  // A manual gate can also round-trip a stock music VPK even without an
+  // advertised gate position in the extracted music RCO metadata.
+  assert.match(generateTemplate({ ...layout, templateStyle: "music" }),
+    /<startup-image>startup\.png<\/startup-image>/);
+});
+
 test("RCO frame geometry varies across a1-a5, with the correct fixed slot count", () => {
   const expected = {
     a1: [[-290, 34, 260, 260], [290, 34, 260, 260], [0, -171, 840, 150]],

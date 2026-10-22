@@ -1,8 +1,8 @@
-import { CARD, PALETTE } from "./geometry.mjs?v=1.31";
-import { generateTemplate } from "./template.mjs?v=1.31";
-import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.31";
-import { getRcoLayout } from "./template-slots.mjs?v=1.31";
-import { quantizeRgba } from "./quantizer.mjs?v=1.31";
+import { CARD, PALETTE } from "./geometry.mjs?v=1.32";
+import { generateTemplate } from "./template.mjs?v=1.32";
+import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.32";
+import { hasStartupGate } from "./template-preview.mjs?v=1.32";
+import { quantizeRgba } from "./quantizer.mjs?v=1.32";
 
 const encoder = new TextEncoder();
 const SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
@@ -368,7 +368,7 @@ export async function buildLiveAreaPackage(layout, images, frameLayouts = {},
   const entries = [{ name: root + "template.xml", data: generateTemplate(layout, frameLayouts) }];
   await addImage(entries, root + "bg0.png", CARD.width, CARD.height,
     PALETTE[layout.cardColor].hex, images.card, false, false, optimizeImages, warnings);
-  if (getRcoLayout(layout.templateStyle).gate !== null) {
+  if (hasStartupGate(layout)) {
     await addImage(entries, root + "startup.png", 280, 158,
       PALETTE[layout.buttonColor].hex, images.gate, true, !images.gate,
       optimizeImages, warnings);

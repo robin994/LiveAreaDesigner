@@ -1,7 +1,7 @@
-import { CARD, DEFAULT_LAYOUT, normalizeLayout } from "./geometry.mjs?v=1.31";
-import { makeFrameLayout, frameKey } from "./frame-model.mjs?v=1.31";
-import { RCO_LAYOUTS, getRcoLayout } from "./template-slots.mjs?v=1.31";
-import { readArchiveEntry } from "./vpk.mjs?v=1.31";
+import { CARD, DEFAULT_LAYOUT, normalizeLayout } from "./geometry.mjs?v=1.32";
+import { makeFrameLayout, frameKey } from "./frame-model.mjs?v=1.32";
+import { RCO_LAYOUTS, getRcoLayout } from "./template-slots.mjs?v=1.32";
+import { readArchiveEntry } from "./vpk.mjs?v=1.32";
 
 const CONTENTS = "sce_sys/livearea/contents/";
 const decode = new TextDecoder("utf-8", { fatal: true });
@@ -40,6 +40,7 @@ export function parseVpkTemplate(xml) {
   }
   const slotLayout = getRcoLayout(style);
   if (!slotLayout) throw new Error("Unsupported template style.");
+  const manualGate = slotLayout.gate === null && root.querySelector("gate") !== null;
   const layouts = {};
   const paths = new Map();
   const notes = [];
@@ -65,6 +66,7 @@ export function parseVpkTemplate(xml) {
     const item = normalizeLayout({
       ...prepared,
       templateStyle: style, frameId: id,
+      includeGate: manualGate,
       ...(img ? {
         x: Math.round(cardX), y: Math.round(cardY), w: width, h: height
       } : {}),

@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — v1.31, lossless frame1 artwork, TinyPNG-quality PNG8 backgrounds, gate-less ad0 and VPK editing.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — Web Editor 1.32 / native Vita VPK 1.31, lossless frame1 artwork, editable LiveArea gates and VPK editing.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -27,6 +27,8 @@ The preview uses **actual slot geometry**, but is **not** a pixel-perfect emulat
 **https://robin994.github.io/LiveAreaDesigner/**
 
 Everything runs in your browser; images never leave your computer. Choose PNG/JPG assets through the normal file picker or drag-and-drop. Layout settings use localStorage, images use IndexedDB. Supported on modern desktop and mobile browsers; the Vita's built-in browser is not a target.
+
+**Web 1.32 — issue #1:** When selecting ad0 (or another style without an RCO gate slot), the editor now shows **Include startup gate manually** above the gate image upload. It is **off by default**, so previously generated gate-less XML stays unchanged. Enable it to export a gate/startup-image declaration and the corresponding startup.png in the ZIP or patched VPK. Existing VPKs that already contain a gate retain this setting on import. The preview marks any manually enabled gate as **estimated**: without an RCO gate slot, its actual placement and visibility on hardware are unverified. This is a web-only fix; the native PS Vita application remains at 1.31.
 
 ### Edit an existing VPK in the browser
 
@@ -74,7 +76,7 @@ sce_sys/
     contents/
       template.xml
       bg0.png          # 840 x 500, indexed PNG8
-      startup.png      # ONLY for gate-capable styles, 280 x 158 indexed PNG8
+      startup.png      # Native gate or explicit web manual gate, 280 x 158 indexed PNG8
       frame1.png       # lossless RGB/RGBA (or byte-for-byte original PNG)
       frame2.png       # independent PNG8 for native frame2
       frame3.png       # independent PNG8 for native frame3
@@ -84,7 +86,7 @@ sce_sys/
     002.png
 ```
 
-A gate is fixed by the chosen LiveArea style. For example, `a1` centers the startup image; `psmobile` places it to the right. **The `ad0` style has no startup gate:** its `template.xml` contains no `<gate>` or `<startup-image>`, and its exported assets do not include `startup.png`. The same behavior applies to the other gate-less styles (`ad1`-`ad4`, `music`). Selecting such a style hides the unnecessary gate upload in the web editor. Other styles may include system-specific functionality not available to third-party homebrew.
+A native gate is fixed by the chosen LiveArea style. For example, `a1` centers the startup image; `psmobile` places it to the right. **By default, `ad0` has no startup gate:** its generated XML includes no gate/startup-image tags and the exported ZIP omits `startup.png`. This also applies to other styles without a gate in their RCO (`ad1`-`ad4`, `music`). In the **web editor**, enable **Include startup gate manually** to export both the XML declaration and `startup.png`, with unverified placement on the physical console. Notably, Sony's own `music` template includes a gate even though the extracted music RCO does not advertise one. Other styles may include system-specific functionality not available to third-party homebrew.
 
 The web app exports a liveitem for **every frame in the selected style**, with lossless PNG for frame1 and PNG8 for the remaining frames. Each frame can have a different link to a website or supported Vita URI, text, dimensions and transparent/preset-color background. Existing pre-v1.23 projects retain their original button artwork in the previously active frame.
 
