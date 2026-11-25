@@ -48,6 +48,17 @@ int main(void) {
     SDL_FreeSurface(result);
 
     edit = (LadArtwork){ .solid = 1, .red = 166, .green = 100, .blue = 40 };
+    const SDL_Rect hole = {0, 0, 1, 1};
+    SDL_FillRect(source, &hole, 0);
+    result = lad_artwork_render(source, &edit, 4, 2, matte, true);
+    assert(result && !memcmp(result->pixels, (Uint8[]){0, 0, 0, 0,
+        166, 100, 40, 255, 166, 100, 40, 128}, 12));
+    SDL_FreeSurface(result);
+    result = lad_artwork_render(source, &edit, 4, 2, matte, false);
+    assert(result && !memcmp(result->pixels, (Uint8[]){10, 20, 30, 255,
+        166, 100, 40, 255, 88, 60, 35, 255}, 12));
+    SDL_FreeSurface(result);
+
     result = lad_artwork_render(NULL, &edit, 128, 128, matte, false);
     assert(result && !memcmp(result->pixels, (Uint8[]){166, 100, 40, 255}, 4));
     lad_artwork_mask_bubble(result);

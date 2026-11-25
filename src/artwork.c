@@ -98,7 +98,7 @@ SDL_Surface *lad_artwork_render(SDL_Surface *source, const LadArtwork *requested
     SDL_Surface *result = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32,
                                                         SDL_PIXELFORMAT_RGBA32);
     if (!result) return NULL;
-    if (art.solid || !source) {
+    if (!source) {
         const Uint32 color = art.solid ?
             SDL_MapRGBA(result->format, art.red, art.green, art.blue, 255) :
             SDL_MapRGBA(result->format, fill.r, fill.g, fill.b, transparent ? 0 : 255);
@@ -110,7 +110,19 @@ SDL_Surface *lad_artwork_render(SDL_Surface *source, const LadArtwork *requested
         SDL_FreeSurface(result);
         return NULL;
     }
-    adjust_color(result, &art);
+    if (art.solid) {
+        for (int y = 0; y < height; ++y) {
+            Uint8 *pixel = (Uint8 *)result->pixels + y * result->pitch;
+            for (int x = 0; x < width; ++x, pixel += 4) {
+                if (!pixel[3]) continue;
+                pixel[0] = art.red;
+                pixel[1] = art.green;
+                pixel[2] = art.blue;
+            }
+        }
+    } else {
+        adjust_color(result, &art);
+    }
     if (!transparent) {
         for (int y = 0; y < height; ++y) {
             Uint8 *pixel = (Uint8 *)result->pixels + y * result->pitch;

@@ -139,7 +139,7 @@ static bool export_picture(const char *source, const char *output,
         return true;
 
     SDL_Surface *image = NULL;
-    if (!art->solid && source && source[0]) {
+    if (source && source[0]) {
         image = lad_artwork_load(source);
         if (!image) return false;
     }
@@ -270,8 +270,9 @@ bool lad_export_bundle(const DesignerConfig *cfg, char *error, size_t size) {
         }
         const int color = item.button_color >= 0 && item.button_color < LAD_PALETTE_COUNT
             ? item.button_color : 1;
+        const bool alpha = item.transparent_button || (item.image[0] && item.artwork.solid);
         if (!export_picture(item.image, filename, item.w, item.h,
-                            palette[color], item.transparent_button != 0,
+                            palette[color], alpha,
                             frame == 1, &item.artwork)) {
             set_error(error, size, "FRAME PNG EXPORT FAILED"); return false;
         }
@@ -279,8 +280,9 @@ bool lad_export_bundle(const DesignerConfig *cfg, char *error, size_t size) {
 
     snprintf(filename, sizeof(filename), "%s/sce_sys/icon0.png", LAD_EXPORT_DIR);
     if (cfg->icon_image[0] || cfg->artwork[LAD_ART_ICON].solid) {
+        const bool alpha = cfg->icon_image[0] && cfg->artwork[LAD_ART_ICON].solid;
         if (!export_picture(cfg->icon_image, filename, 128, 128, palette[8],
-                            false, false, &cfg->artwork[LAD_ART_ICON])) {
+                            alpha, false, &cfg->artwork[LAD_ART_ICON])) {
             set_error(error, size, "ICON0.PNG EXPORT FAILED"); return false;
         }
     } else {

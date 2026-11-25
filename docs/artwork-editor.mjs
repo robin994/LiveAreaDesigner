@@ -1,9 +1,11 @@
-import { centerCrop, cropRect, moveCropAxis, normalizeArtwork, paintArtwork, solidColor } from './artwork.mjs?v=1.33';
+import { centerCrop, cropRect, moveCropAxis, normalizeArtwork, paintArtwork, solidColor, tintedSource } from './artwork.mjs?v=1.33.1';
 import { drawBubble } from './presentation.mjs?v=1.33';
 
 export function createArtworkEditor({ onApply, onUpload }) {
   const byId = id => document.getElementById(id);
   const dialog = byId('artwork-dialog');
+  const closeButton = byId('artwork-close');
+  const isOpen = () => dialog.hasAttribute('open');
   const sourceCanvas = byId('artwork-source');
   const sourceWrap = byId('artwork-source-wrap');
   const selection = byId('crop-selection');
@@ -12,6 +14,7 @@ export function createArtworkEditor({ onApply, onUpload }) {
   const bubble = byId('artwork-bubble');
   const solid = byId('artwork-solid');
   const picker = byId('artwork-color');
+  const fillLabel = byId('artwork-fill-label');
   const browse = byId('artwork-file');
   const message = byId('artwork-message');
   const specs = [
@@ -26,7 +29,7 @@ export function createArtworkEditor({ onApply, onUpload }) {
     ['green', 'Green', 0, 255, ''],
     ['blue', 'Blue', 0, 255, '']
   ];
-  let current, draft, drag, pendingDraw = 0;
+  let current, draft, drag, returnFocus, pendingDraw = 0;
   const controls = specs.map(([name, title, min, max, unit], i) => {
     const label = document.createElement('label');
     label.className = 'artwork-slider';
@@ -52,19 +55,21 @@ export function createArtworkEditor({ onApply, onUpload }) {
 
   function render() {
     pendingDraw = 0;
-    if (!current || !dialog.open) return;
+    if (!current || !isOpen()) return;
     const { source, width, height, transparent, background, target } = current;
     const image = source?.image;
     for (const { name, slider, value, unit } of controls) {
       slider.value = draft[name];
       value.textContent = draft[name] + unit;
       if (name === 'red' || name === 'green' || name === 'blue') slider.disabled = !draft.solid;
+      if (name === 'hue' || name === 'saturation' || name === 'brightness') slider.disabled = draft.solid;
     }
     solid.checked = draft.solid;
+    fillLabel.textContent = image ? 'Tint image' : 'Solid color';
     picker.disabled = !draft.solid;
     picker.value = solidColor(draft);
-    byId('artwork-image-controls').disabled = !image || draft.solid;
-    selection.hidden = !image || draft.solid;
+    byId('artwork-image-controls').disabled = !image;
+    selection.hidden = !image;
     byId('artwork-instructions').hidden = selection.hidden;
     if (!selection.hidden) {
       const crop = cropRect(image.naturalWidth, image.naturalHeight, draft);
@@ -74,7 +79,8 @@ export function createArtworkEditor({ onApply, onUpload }) {
     }
     const ctx = output.getContext('2d');
     ctx.clearRect(0, 0, output.width, output.height);
-    if (!transparent && (source || draft.solid || target === 'card' || target === 'button')) {
+    const preserveTintAlpha = (target === 'icon' || target === 'button') && tintedSource(source, draft);
+    if (!transparent && !preserveTintAlpha && (source || draft.solid || target === 'card' || target === 'button')) {
       ctx.fillStyle = background;
       ctx.fillRect(0, 0, output.width, output.height);
     }
@@ -110,7 +116,15 @@ export function createArtworkEditor({ onApply, onUpload }) {
       sourceWrap.style.width = sourceCanvas.width + 'px';
       sourceCanvas.getContext('2d').drawImage(image, 0, 0, sourceCanvas.width, sourceCanvas.height);
     }
-    if (!dialog.open) dialog.showModal();
+    if (!isOpen()) {
+      if (typeof dialog.showModal === 'function') dialog.showModal();
+      else {
+        returnFocus = document.activeElement;
+        dialog.classList.add('dialog-fallback');
+        dialog.setAttribute('open', '');
+        closeButton.focus();
+      }
+    }
     render();
   }
 
@@ -162,7 +176,7 @@ export function createArtworkEditor({ onApply, onUpload }) {
   });
   byId('artwork-apply').addEventListener('click', () => {
     onApply(current, draft);
-    dialog.close();
+    close();
   });
   byId('artwork-upload').addEventListener('click', () => browse.click());
   browse.addEventListener('change', async () => {
@@ -172,14 +186,30 @@ export function createArtworkEditor({ onApply, onUpload }) {
     const asset = current;
     message.textContent = '';
     try { await onUpload(asset, file); }
-    catch (error) { if (current === asset && dialog.open) message.textContent = error.message; }
+    catch (error) { if (current === asset && isOpen()) message.textContent = error.message; }
   });
-  dialog.addEventListener('close', () => {
-    if (dialog.open) return;
+  function cleanup() {
+    if (isOpen()) return;
     cancelAnimationFrame(pendingDraw);
     pendingDraw = 0;
     drag = null;
     current = null;
+  }
+  function close() {
+    if (!dialog.classList.contains('dialog-fallback')) {
+      dialog.close();
+      return;
+    }
+    dialog.removeAttribute('open');
+    dialog.classList.remove('dialog-fallback');
+    cleanup();
+    returnFocus?.focus();
+    returnFocus = null;
+  }
+  closeButton.addEventListener('click', close);
+  dialog.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && dialog.classList.contains('dialog-fallback')) close();
   });
-  return { open, isEditing: key => dialog.open && current?.key === key };
+  dialog.addEventListener('close', cleanup);
+  return { open, isEditing: key => isOpen() && current?.key === key };
 }

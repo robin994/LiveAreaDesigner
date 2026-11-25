@@ -1,5 +1,10 @@
 # Changelog
 
+## Web Editor 1.33.1 - 2026-11-25
+
+- Place LiveArea and Home Bubble above the main canvas and render both views inline. The artwork editor also opens in WebViews without native modal dialog support.
+- Preserve PNG transparency when applying an RGB tint in the web editor and native Vita source. Solid color still fills the asset when no image is loaded.
+
 ## v1.33 - 2026-11-25
 
 ### Web editor

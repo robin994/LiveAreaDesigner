@@ -1,4 +1,4 @@
-import { frameInProject, hasArtworkEdits, paintArtwork } from "./artwork.mjs?v=1.33";
+import { frameInProject, hasArtworkEdits, paintArtwork, tintedSource } from "./artwork.mjs?v=1.33.1";
 import { CARD, PALETTE } from "./geometry.mjs?v=1.33";
 import { generateTemplate } from "./template.mjs?v=1.33";
 import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.33";
@@ -381,12 +381,13 @@ export async function buildLiveAreaPackage(layout, images, frameLayouts = {},
   }
   for (const item of frames) {
     const key = frameKey(item.templateStyle, item.frameId);
+    const source = frameSource(key);
     await addImage(entries, root + `frame${item.frameId}.png`, item.w, item.h,
-      PALETTE[item.buttonColor].hex, frameSource(key), item.transparentButton,
+      PALETTE[item.buttonColor].hex, source, item.transparentButton || tintedSource(source, artworkEdits[key]),
       false, optimizeImages, warnings, item.frameId === 1, artworkEdits[key]);
   }
   if (images.icon || artworkEdits.icon?.solid) await addImage(entries, "sce_sys/icon0.png", 128, 128, "#000000",
-    images.icon, false, false, optimizeImages, warnings, false, artworkEdits.icon);
+    images.icon, tintedSource(images.icon, artworkEdits.icon), false, optimizeImages, warnings, false, artworkEdits.icon);
   if (images.boot || artworkEdits.boot?.solid) await addImage(entries, "sce_sys/pic0.png", 960, 544, "#000000",
     images.boot, false, false, optimizeImages, warnings, false, artworkEdits.boot);
   for (const [i, page] of (images.manual || []).entries()) {

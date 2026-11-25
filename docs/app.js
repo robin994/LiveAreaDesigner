@@ -5,7 +5,7 @@ import {
   dragLayout, stepLayout
 } from "./geometry.mjs?v=1.33";
 import { generateTemplate } from "./template.mjs?v=1.33";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.33";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.33.1";
 import {
   previewGate, previewFrames, previewSummary, frameRelativeOffsets, hasStartupGate,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
@@ -17,8 +17,8 @@ import { readVpk, patchVpk } from "./vpk.mjs?v=1.33";
 import { readVpkProject } from "./vpk-import.mjs?v=1.33";
 import { getRcoLayout } from "./template-slots.mjs?v=1.33";
 
-import { createArtworkEditor } from "./artwork-editor.mjs?v=1.33";
-import { frameInProject, hasArtworkEdits, normalizeArtwork, paintArtwork, solidColor } from "./artwork.mjs?v=1.33";
+import { createArtworkEditor } from "./artwork-editor.mjs?v=1.33.1";
+import { frameInProject, hasArtworkEdits, normalizeArtwork, paintArtwork, solidColor, tintedSource } from "./artwork.mjs?v=1.33.1";
 import { drawBubble, drawHomePreview, drawScreenBackdrop } from "./presentation.mjs?v=1.33";
 
 const PREFS_KEY = "livearea-designer-web-v1";
@@ -73,10 +73,10 @@ state.frameLayouts[initialFrameKey] = { ...state.layout };
 state.images.button = null;
 let drawScheduled = false;
 let toastTimeout = 0;
-const presentationDialog = document.getElementById("presentation-dialog");
+const presentationScreen = document.getElementById("presentation-screen");
 const presentationCanvas = document.getElementById("presentation-canvas");
 const bubbleThumb = document.getElementById("bubble-thumb");
-let presentationView = "livearea";
+let presentationView = "editor";
 let artworkEditor;
 
 const artworkLabels = {
@@ -401,10 +401,27 @@ function updateAssetUI(target) {
       `${state.layout.templateStyle.toUpperCase()} / FRAME${state.layout.frameId}`;
   }
   const color = PALETTE[state.layout[target === "card" ? "cardColor" : "buttonColor"]].hex;
-  thumb.style.backgroundColor = edit?.solid ? solidColor(edit) : color;
-  thumb.style.backgroundImage = image && !edit?.solid ? `url("${image.url}")` : "none";
-  thumb.querySelector(".asset-thumb-icon").style.visibility = image || edit?.solid ? "hidden" : "visible";
-  filename.textContent = edit?.solid ? `Solid color · ${solidColor(edit).toUpperCase()}` :
+  const tinted = tintedSource(image, edit);
+  let tintPreview = thumb.querySelector("canvas");
+  if (tinted && !tintPreview) {
+    tintPreview = document.createElement("canvas");
+    tintPreview.width = tintPreview.height = 41;
+    tintPreview.setAttribute("aria-hidden", "true");
+    thumb.append(tintPreview);
+  }
+  if (tintPreview) {
+    tintPreview.hidden = !tinted;
+    if (tinted) {
+      const context = tintPreview.getContext("2d");
+      const { width, height } = artworkAsset(target);
+      context.clearRect(0, 0, 41, 41);
+      paintArtwork(context, image, edit, 0, 0, 41, 41, width, height);
+    }
+  }
+  thumb.style.backgroundColor = tinted ? "var(--surface)" : edit?.solid ? solidColor(edit) : color;
+  thumb.style.backgroundImage = image && !tinted ? `url("${image.url}")` : "none";
+  thumb.querySelector(".asset-thumb-icon").hidden = Boolean(image || edit?.solid);
+  filename.textContent = edit?.solid ? `${tinted ? "Tint" : "Solid color"} · ${solidColor(edit).toUpperCase()}` :
     image ? image.name + (hasArtworkEdits(edit) ? " · edited" : "") : "No image selected";
   filename.title = filename.textContent;
   document.getElementById(`${target}-clear`).disabled = !image && !edit?.solid;
@@ -545,10 +562,10 @@ function scheduleDraw() {
   drawScheduled = true;
   requestAnimationFrame(() => {
     drawScheduled = false;
-    drawScene(ctx, { guides: state.guides, hud: true });
+    if (presentationView === "editor") drawScene(ctx, { guides: state.guides, hud: true });
+    else renderPresentation();
     updateInterface();
     updateBubbleThumb();
-    if (presentationDialog.open) renderPresentation();
   });
 }
 
@@ -843,7 +860,7 @@ function drawFrameLiveitems(ctx2d, layout, { clean = false, guides = true } = {}
     ctx2d.beginPath();
     ctx2d.rect(clip.x, clip.y, clip.w, clip.h);
     ctx2d.clip();
-    if (!item.transparentButton) {
+    if (!item.transparentButton && !tintedSource(image, edit)) {
       ctx2d.globalAlpha = image || edit?.solid || clean ? 1 : .52;
       ctx2d.fillStyle = PALETTE[item.buttonColor].hex;
       ctx2d.fillRect(rect.x, rect.y, rect.w, rect.h);
@@ -946,7 +963,7 @@ function drawScene(ctx2d, { guides = true, hud = true } = {}) {
     drawFrameLiveitems(ctx2d, layout, { guides });
     drawGate(ctx2d, layout, false);
   } else {
-  if (!layout.transparentButton) {
+  if (!layout.transparentButton && !tintedSource(state.images.button, state.artworkEdits[artworkKey("button")])) {
     ctx2d.fillStyle = PALETTE[layout.buttonColor].hex;
     ctx2d.fillRect(rect.x, rect.y, rect.w, rect.h);
   }
@@ -1016,15 +1033,16 @@ function currentIconTile() {
   const { source, edit, background } = artworkAsset("icon");
   if (!source && !edit?.solid) return null;
   const context = iconTile.getContext("2d");
-  context.fillStyle = background;
-  context.fillRect(0, 0, 128, 128);
+  context.clearRect(0, 0, 128, 128);
+  if (!tintedSource(source, edit)) {
+    context.fillStyle = background;
+    context.fillRect(0, 0, 128, 128);
+  }
   paintArtwork(context, source, edit, 0, 0, 128, 128);
   return iconTile;
 }
 function updateBubbleThumb() {
   const icon = currentIconTile();
-  bubbleThumb.hidden = !icon;
-  if (!icon) return;
   const context = bubbleThumb.getContext("2d");
   context.clearRect(0, 0, 48, 48);
   drawBubble(context, icon, 0, 0, 48);
@@ -1035,22 +1053,27 @@ function renderPresentation() {
     const icon = currentIconTile();
     const title = state.vpk?.filename.replace(/\.vpk$/i, "") || "Home Bubble";
     drawHomePreview(context, icon, title);
+    document.getElementById("presentation-empty").hidden = Boolean(icon);
     document.getElementById("presentation-export").disabled = !icon;
     return;
   }
+  document.getElementById("presentation-empty").hidden = true;
   document.getElementById("presentation-export").disabled = false;
   drawScreenBackdrop(context);
   context.save();
-  const cardOutline = new Path2D();
   const right = CARD.x + CARD.width, bottom = CARD.y + CARD.height;
   const corner = 25;
-  cardOutline.moveTo(CARD.x, CARD.y);
-  cardOutline.lineTo(right - corner, CARD.y);
-  cardOutline.lineTo(right, CARD.y + corner);
-  cardOutline.lineTo(right, bottom);
-  cardOutline.lineTo(CARD.x, bottom);
-  cardOutline.closePath();
-  context.clip(cardOutline);
+  const traceCard = () => {
+    context.beginPath();
+    context.moveTo(CARD.x, CARD.y);
+    context.lineTo(right - corner, CARD.y);
+    context.lineTo(right, CARD.y + corner);
+    context.lineTo(right, bottom);
+    context.lineTo(CARD.x, bottom);
+    context.closePath();
+  };
+  traceCard();
+  context.clip();
   context.fillStyle = PALETTE[state.layout.cardColor].hex;
   context.fillRect(CARD.x, CARD.y, CARD.width, CARD.height);
   paintArtwork(context, state.images.card, state.artworkEdits.card,
@@ -1059,7 +1082,8 @@ function renderPresentation() {
   drawGate(context, state.layout, true);
   context.strokeStyle = "#b2c8e27c";
   context.lineWidth = 1.5;
-  context.stroke(cardOutline);
+  traceCard();
+  context.stroke();
   context.fillStyle = "#c9e5f584";
   context.beginPath();
   context.moveTo(right - corner, CARD.y);
@@ -1071,14 +1095,18 @@ function renderPresentation() {
 }
 function showPresentation(view) {
   presentationView = view;
+  const editing = view === "editor";
   const bubble = view === "bubble";
+  document.getElementById("editor-screen").hidden = !editing;
+  presentationScreen.hidden = editing;
+  for (const button of ["editor", "livearea", "bubble"])
+    document.getElementById(`show-${button}`).setAttribute("aria-pressed", String(view === button));
   document.getElementById("presentation-title").textContent = bubble ? "Home Bubble" : "LiveArea View";
-  document.getElementById("presentation-livearea").setAttribute("aria-pressed", String(!bubble));
-  document.getElementById("presentation-bubble").setAttribute("aria-pressed", String(bubble));
   document.getElementById("presentation-edit-icon").hidden = !bubble;
-  if (!presentationDialog.open) presentationDialog.showModal();
-  renderPresentation();
+  if (editing) drawScene(ctx, { guides: state.guides, hud: true });
+  else renderPresentation();
 }
+
 function savePresentation() {
   renderPresentation();
   const name = presentationView === "bubble" ? "vita-home-bubble.png" : "vita-livearea.png";
@@ -1300,15 +1328,11 @@ async function copyCoordinates() {
 }
 
 function bindEditor() {
-  document.getElementById("show-livearea").addEventListener("click", () => showPresentation("livearea"));
-  document.getElementById("show-bubble").addEventListener("click", () => showPresentation("bubble"));
-  document.getElementById("presentation-livearea").addEventListener("click", () => showPresentation("livearea"));
-  document.getElementById("presentation-bubble").addEventListener("click", () => showPresentation("bubble"));
+  for (const view of ["editor", "livearea", "bubble"])
+    document.getElementById(`show-${view}`).addEventListener("click", () => showPresentation(view));
   document.getElementById("presentation-export").addEventListener("click", savePresentation);
-  document.getElementById("presentation-edit-icon").addEventListener("click", () => {
-    presentationDialog.close();
-    artworkEditor.open(artworkAsset("icon"));
-  });
+  document.getElementById("presentation-edit-icon").addEventListener("click",
+    () => artworkEditor.open(artworkAsset("icon")));
   elements.move.addEventListener("click", () => setMode("move"));
   elements.resize.addEventListener("click", () => setMode("resize"));
   elements.guides.addEventListener("click", () => {
@@ -1483,7 +1507,7 @@ function bindEditor() {
   });
 
   window.addEventListener("keydown", event => {
-    if (presentationDialog.open || document.getElementById("artwork-dialog").open) return;
+    if (presentationView !== "editor" || document.getElementById("artwork-dialog").hasAttribute("open")) return;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
     if (event.key.toLowerCase() === "m") { setMode("move"); return; }

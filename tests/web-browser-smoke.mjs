@@ -164,6 +164,25 @@ try {
   assert.equal(pageState.height, 544);
   assert.equal(pageState.x, "-1");
   assert.equal(pageState.right, "278");
+  const views = await evaluate(`(() => {
+    const native = HTMLDialogElement.prototype.showModal;
+    HTMLDialogElement.prototype.showModal = undefined;
+    const preview = document.getElementById("presentation-screen");
+    document.getElementById("show-livearea").click();
+    const livearea = !preview.hidden && document.getElementById("editor-screen").hidden;
+    document.getElementById("show-bubble").click();
+    const bubble = !preview.hidden && !document.getElementById("presentation-empty").hidden;
+    document.getElementById("presentation-edit-icon").click();
+    const dialog = document.getElementById("artwork-dialog");
+    const edit = dialog.hasAttribute("open") && dialog.classList.contains("dialog-fallback");
+    document.getElementById("artwork-close").click();
+    const closed = !dialog.hasAttribute("open");
+    document.getElementById("show-editor").click();
+    HTMLDialogElement.prototype.showModal = native;
+    return { livearea, bubble, edit, closed, editor: preview.hidden };
+  })()`);
+  assert.deepEqual(views, { livearea: true, bubble: true, edit: true, closed: true, editor: true });
+  console.log("PASS: inline preview modes and icon controls without showModal");
   console.log("PASS: desktop initialization and native dimensions");
 
   await evaluate(`(() => {
@@ -1047,9 +1066,9 @@ try {
       const left = (i / 4) % 128 < 64;
       icon[i] = left ? 255 : 0;
       icon[i + 2] = left ? 0 : 200;
-      icon[i + 3] = 255;
+      icon[i + 3] = (i / 4) % 128 >= 96 && i >= 64 * 128 * 4 ? 0 : 255;
     }
-    files.push({ name: "sce_sys/icon0.png", data: await encodeIndexedPng(128, 128, icon) });
+    files.push({ name: "sce_sys/icon0.png", data: await encodeIndexedPng(128, 128, icon, true) });
     const prefix = "sce_sys/livearea/contents/";
     const template = files.find(item => item.name === prefix + "template.xml");
     const xml = new DOMParser().parseFromString(new TextDecoder().decode(template.data), "text/xml");
@@ -1107,6 +1126,15 @@ try {
   await waitFor(async () => JSON.stringify(await evaluate(iconPixel)) === "[65,65,65,255]", "edited icon RGB preview");
   assert.equal(await evaluate('document.getElementById("artwork-bubble").getContext("2d").getImageData(0, 0, 1, 1).data[3]'), 0,
     "The shell's bubble mask is only in the preview");
+  await evaluate(`(() => {
+    document.getElementById("artwork-solid").click();
+    const picker = document.getElementById("artwork-color");
+    picker.value = "#a66428";
+    picker.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(async () => JSON.stringify(await evaluate(iconPixel)) === "[166,100,40,255]", "tinted icon preview");
+  assert.deepEqual(await evaluate(iconPixel.replace("2, 2", "120, 120")), [0, 0, 0, 0]);
+  assert.equal(await evaluate('document.getElementById("artwork-cropWidth").matches(":disabled")'), false);
   await screenshot("web-artwork-editor.png");
   await evaluate('document.getElementById("artwork-apply").click()');
   await evaluate(`(() => {
@@ -1134,9 +1162,9 @@ try {
   assert.deepEqual(await evaluate(`Array.from(document.getElementById("presentation-canvas")
     .getContext("2d").getImageData(90, 48, 1, 1).data)`), [25, 54, 83, 255]);
   await evaluate('document.getElementById("presentation-export").click()');
-  await evaluate('document.getElementById("presentation-bubble").click()');
+  await evaluate('document.getElementById("show-bubble").click()');
   await evaluate('document.getElementById("presentation-export").click()');
-  await evaluate('document.getElementById("presentation-dialog").close()');
+  await evaluate('document.getElementById("show-editor").click()');
   for (const filename of ["vita-livearea.png", "vita-home-bubble.png"]) {
     const bytes = await waitFor(async () => {
       try { return await readFile(join(downloads, filename)); } catch { return false; }
@@ -1172,7 +1200,7 @@ try {
   assert.doesNotMatch(modifiedTemplate, /frame2\.png/, "Unused imported slots stay empty");
   const untouchedGate = execFileSync("unzip", ["-p", modifiedName, "sce_sys/livearea/contents/startup.png"]);
   assert.deepEqual(untouchedGate, Buffer.from(await evaluate("window.originalFixtureGate")));
-  for (const [path, expected] of [["sce_sys/icon0.png", [65, 65, 65, 255]],
+  for (const [path, expected] of [["sce_sys/icon0.png", [166, 100, 40, 255]],
     ["sce_sys/pic0.png", [166, 100, 40, 255]], ["sce_sys/livearea/contents/bg0.png", [25, 54, 83, 255]],
     ["sce_sys/livearea/contents/frame1.png", [32, 64, 96, 255]]]) {
     const file = execFileSync("unzip", ["-p", modifiedName, path]);
@@ -1182,14 +1210,18 @@ try {
       const canvas = new OffscreenCanvas(image.width, image.height);
       const ctx = canvas.getContext("2d");
       ctx.drawImage(image, 0, 0);
-      return [...ctx.getImageData(0, 0, 1, 1).data];
+      const color = [...ctx.getImageData(0, 0, 1, 1).data];
+      const corner = [...ctx.getImageData(image.width - 1, image.height - 1, 1, 1).data];
+      return { color, corner };
     })()`);
-    assert.deepEqual(rgba, expected, path + " applies the edited color in the patched VPK");
+    if (path === "sce_sys/icon0.png")
+      assert.deepEqual(rgba.corner, [0, 0, 0, 0], "Tinted icon retains alpha in the patched VPK");
+    assert.deepEqual(rgba.color, expected, path + " applies the edited color in the patched VPK");
   }
   console.log("PASS: import/edit/patch VPK with original executable and game assets intact");
 
   await send("Page.reload", { ignoreCache: true });
-  await waitFor(() => evaluate('document.getElementById("icon-filename").textContent.includes("edited")'),
+  await waitFor(() => evaluate('document.getElementById("icon-filename").textContent.includes("Tint")'),
     "persist icon edits and source across reload");
   await evaluate('document.getElementById("icon-edit").click()');
   assert.equal(await evaluate('document.getElementById("artwork-cropX").value'), "100");
@@ -1215,9 +1247,14 @@ try {
   assert.equal(pageState.innerWidth, 390);
   assert.ok(pageState.scrollWidth <= 392, "No horizontal overflow on mobile");
   assert.ok(pageState.canvasWidth > 300 && pageState.canvasWidth < 400);
+  await evaluate('document.getElementById("show-bubble").click()');
+  assert.ok(await evaluate('document.getElementById("presentation-canvas").getBoundingClientRect().width > 300'));
+  await evaluate('document.querySelector(".preview-nav").scrollIntoView({ block: "start", behavior: "instant" })');
+  await screenshot("webview-bubble-mobile.png");
+  await evaluate('document.getElementById("show-editor").click()');
   console.log("PASS: mobile layout without horizontal overflow");
   await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
-  await waitFor(() => evaluate('document.getElementById("icon-filename").textContent.includes("edited")'),
+  await waitFor(() => evaluate('document.getElementById("icon-filename").textContent.includes("Tint")'),
     "restored icon before mobile crop");
   await evaluate('document.getElementById("icon-edit").click()');
   const grip = await evaluate(`(() => {

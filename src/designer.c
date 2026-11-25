@@ -280,11 +280,11 @@ static bool reload_artwork(App *a, int target) {
     const char *path = artwork_path(a, target);
     const LadArtwork *art = &a->cfg.artwork[target];
     if (!*path && !art->solid) return true;
-    SDL_Surface *source = art->solid ? NULL : lad_artwork_load(path);
+    SDL_Surface *source = *path ? lad_artwork_load(path) : NULL;
     const bool bubble = target == LAD_ART_ICON;
-    const bool ok = (source || art->solid) &&
+    const bool ok = (source || !*path) &&
         replace_preview(a, out, source, art, artwork_dimensions(a, target),
-                        bubble, palette[8], !bubble);
+                        bubble, palette[8], !bubble || (source && art->solid));
     SDL_FreeSurface(source);
     if (!ok) set_status(a, "IMAGE UNAVAILABLE OR OVER 2048PX / 12MB");
     return ok;
@@ -301,9 +301,9 @@ static void reload_frame_previews(App *a) {
         DesignerFrame item;
         lad_resolve_frame(&a->cfg, id, &item);
         if (!item.image[0] && !item.artwork.solid) continue;
-        SDL_Surface *source = item.artwork.solid ? NULL : lad_artwork_load(item.image);
+        SDL_Surface *source = item.image[0] ? lad_artwork_load(item.image) : NULL;
         const Rect size = {0, 0, clampi(item.w, 1, CARD_W), clampi(item.h, 1, CARD_H)};
-        if (source || item.artwork.solid)
+        if (source || !item.image[0])
             replace_preview(a, &a->frame_previews[id - 1], source, &item.artwork,
                             size, false, palette[8], true);
         SDL_FreeSurface(source);
@@ -586,6 +586,7 @@ static int selected_artwork(const App *a) {
     return -1;
 }
 static bool artwork_control_enabled(const App *a, int row) {
+    if (row < 4) return a->artwork_source != NULL;
     if (row < 7) return a->artwork_source && !a->artwork_draft.solid;
     return row == 7 || a->artwork_draft.solid;
 }
@@ -626,9 +627,10 @@ static void confirm_artwork(App *a) {
     const bool has_image = *artwork_path(a, target) != '\0';
     if ((art->solid || has_image) && artwork_texture(a, target)) {
         const bool bubble = target == LAD_ART_ICON;
-        if ((!art->solid && !a->artwork_source) ||
+        if ((has_image && !a->artwork_source) ||
             !replace_preview(a, artwork_texture(a, target), a->artwork_source,
-                             art, artwork_dimensions(a, target), bubble, palette[8], !bubble)) {
+                             art, artwork_dimensions(a, target), bubble, palette[8],
+                             !bubble || (a->artwork_source && art->solid))) {
             set_status(a, "COULD NOT UPDATE IMAGE PREVIEW");
             return;
         }
@@ -1186,7 +1188,7 @@ static void draw_card(App *a, Rect card, bool guides) {
             SDL_Rect clip = {slot_bounds.x, slot_bounds.y,
                              slot_bounds.w, slot_bounds.h};
             SDL_RenderSetClipRect(r, &clip);
-            if (!item.transparent_button) {
+            if (!item.transparent_button && !(item.image[0] && item.artwork.solid)) {
                 const int palette_index = clampi(item.button_color, 0,
                                                   LAD_PALETTE_COUNT - 1);
                 box(r, content, palette[palette_index], texture || clean ? 255 : 164);
@@ -1240,7 +1242,7 @@ static void draw_card(App *a, Rect card, bool guides) {
         box(r, (Rect){b.x + b.w / 2, b.y + b.h, 2,
                       card.y + card.h - b.y - b.h}, GOLD, 255);
     }
-    if (!a->cfg.transparent_button)
+    if (!a->cfg.transparent_button && !(a->cfg.button_image[0] && a->cfg.artwork[LAD_ART_FRAME].solid))
         box(r, b, palette[a->cfg.button_color], a->button_texture ? 255 : 228);
     draw_image(r, a->button_texture, b);
     outline(r, b, TEXT);
@@ -1317,8 +1319,8 @@ static void draw_settings_export(App *a) {
         if (has_bubble)
             draw_image(r, a->icon_texture, (Rect){58, 207, 40, 40});
         label(a, has_bubble ? 105 : 57, item_y[i] + 42,
-              a->cfg.artwork[i + LAD_ART_GATE].solid ? "SOLID COLOR" :
-                  file_basename(filepaths[i]), 1, MUTED, has_bubble ? 57 : 64);
+              a->cfg.artwork[i + LAD_ART_GATE].solid ?
+                  (filepaths[i][0] ? "TINTED IMAGE" : "SOLID COLOR") : file_basename(filepaths[i]), 1, MUTED, has_bubble ? 57 : 64);
     }
     snprintf(line, sizeof(line), "STYLE: %s",
              lad_preview_style_name(a->cfg.template_style));
@@ -1453,7 +1455,8 @@ static void update_artwork_preview(App *a) {
     const SDL_Color fill = target == LAD_ART_CARD ? palette[a->cfg.card_color] :
                            target == LAD_ART_FRAME ? palette[a->cfg.button_color] : palette[8];
     const bool alpha = target == LAD_ART_GATE ||
-                       (target == LAD_ART_FRAME && a->cfg.transparent_button);
+                       (target == LAD_ART_FRAME && a->cfg.transparent_button) ||
+                       ((icon || target == LAD_ART_FRAME) && a->artwork_source && art->solid);
     SDL_DestroyTexture(a->artwork_result);
     SDL_DestroyTexture(a->artwork_bubble);
     a->artwork_result = a->artwork_bubble = NULL;
@@ -1495,23 +1498,21 @@ static void draw_artwork(App *a) {
         label(a, 42, 188, "CHOOSE AN IMAGE OR ENABLE SOLID COLOR", 1, MUTED, 0);
     }
 
-    label(a, 34, 316, a->artwork_original && !a->artwork_draft.solid ?
+    label(a, 34, 316, a->artwork_original ?
           "SOURCE / DRAG CROP AREA" : "SOURCE", 1, TEXT, 0);
     if (a->artwork_original) {
         const Rect bounds = a->artwork_source_bounds;
         draw_checkerboard(r, bounds);
         draw_image(r, a->artwork_original, bounds);
-        if (!a->artwork_draft.solid) {
-            const SDL_Surface *source = a->artwork_source;
-            const SDL_Rect crop = lad_artwork_crop(source, &a->artwork_draft);
-            const Rect visible = {
-                bounds.x + crop.x * bounds.w / source->w,
-                bounds.y + crop.y * bounds.h / source->h,
-                clampi(crop.w * bounds.w / source->w, 1, bounds.w),
-                clampi(crop.h * bounds.h / source->h, 1, bounds.h)
-            };
-            outline(r, visible, GOLD);
-        }
+        const SDL_Surface *source = a->artwork_source;
+        const SDL_Rect crop = lad_artwork_crop(source, &a->artwork_draft);
+        const Rect visible = {
+            bounds.x + crop.x * bounds.w / source->w,
+            bounds.y + crop.y * bounds.h / source->h,
+            clampi(crop.w * bounds.w / source->w, 1, bounds.w),
+            clampi(crop.h * bounds.h / source->h, 1, bounds.h)
+        };
+        outline(r, visible, GOLD);
     } else {
         label(a, 34, 376, *artwork_path(a, a->artwork_target) ?
               "SOURCE UNAVAILABLE" : "NO SOURCE IMAGE", 1, MUTED, 0);
@@ -1525,7 +1526,7 @@ static void draw_artwork(App *a) {
         const SDL_Color color = enabled ? TEXT : (SDL_Color){112, 124, 151, 255};
         if (row == a->artwork_row)
             outline(r, (Rect){492, y + 1, 432, ARTWORK_ROW_H - 2}, GOLD);
-        label(a, 502, y + 9, control->name, 2, color, 0);
+        label(a, 502, y + 9, row == 7 && a->artwork_source ? "TINT IMAGE" : control->name, 2, color, 0);
         if (row == 7) {
             label(a, ARTWORK_SLIDER_X, y + 9, amount ? "ON" : "OFF", 2, TEXT, 0);
             if (amount) {

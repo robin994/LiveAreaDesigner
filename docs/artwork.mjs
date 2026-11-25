@@ -62,7 +62,7 @@ function adjustColor(pixels, edit) {
 // Geometry changes and replacement images naturally invalidate the result.
 const rasters = new WeakMap();
 export function paintArtwork(context, source, edit, x, y, w, h, width = w, height = h) {
-  if (edit?.solid) {
+  if (edit?.solid && !source?.image) {
     context.fillStyle = solidColor(edit);
     context.fillRect(x, y, w, h);
     return true;
@@ -71,7 +71,7 @@ export function paintArtwork(context, source, edit, x, y, w, h, width = w, heigh
   const image = source.image;
   const crop = edit ? cropRect(image.naturalWidth, image.naturalHeight, edit) :
     { x: 0, y: 0, w: image.naturalWidth, h: image.naturalHeight };
-  if (!edit?.hue && !edit?.saturation && !edit?.brightness) {
+  if (!edit?.solid && !edit?.hue && !edit?.saturation && !edit?.brightness) {
     // Clip sampling at the crop edges so interpolated pixels cannot bleed
     // in from sections the user excluded.
     if (crop.x === 0 && crop.y === 0 && crop.w === image.naturalWidth && crop.h === image.naturalHeight) {
@@ -93,7 +93,12 @@ export function paintArtwork(context, source, edit, x, y, w, h, width = w, heigh
     canvas.height = height;
     const buffer = canvas.getContext('2d', { willReadFrequently: true });
     buffer.drawImage(cropped, 0, 0, width, height);
-    if (edit.hue || edit.saturation || edit.brightness) {
+    if (edit.solid) {
+      // Replace RGB inside the cropped image's existing alpha mask.
+      buffer.globalCompositeOperation = 'source-in';
+      buffer.fillStyle = solidColor(edit);
+      buffer.fillRect(0, 0, width, height);
+    } else if (edit.hue || edit.saturation || edit.brightness) {
       const pixels = buffer.getImageData(0, 0, width, height);
       adjustColor(pixels.data, edit);
       buffer.putImageData(pixels, 0, 0);
@@ -103,6 +108,10 @@ export function paintArtwork(context, source, edit, x, y, w, h, width = w, heigh
   }
   context.drawImage(raster.canvas, x, y, w, h);
   return true;
+}
+
+export function tintedSource(source, edit) {
+  return Boolean(source?.image && edit?.solid);
 }
 
 export function frameInProject(item, source, edit, importedFrameKeys) {

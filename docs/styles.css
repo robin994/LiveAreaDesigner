@@ -529,8 +529,12 @@ kbd {
 }
 .asset-edit:hover { background: #583d68; }
 #icon-thumb { border-radius: 50%; }
-.preview-bottom, .presentation-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.preview-bottom { justify-content: space-between; }
+.preview-nav, .presentation-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.preview-nav { padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.preview-nav button { min-height: 38px; padding: 6px 12px; }
+.preview-nav [aria-pressed="true"] { border-color: var(--pink); color: #ffe6fa; background: #34304b; }
+.presentation-title { margin: 0; padding: 12px 16px 0; font-size: 13px; }
+#presentation-empty { margin: 0; }
 .presentation-actions button { padding: 7px 12px; min-height: 35px; }
 #bubble-thumb { width: 22px; height: 22px; }
 #show-bubble { display: inline-flex; align-items: center; gap: 6px; }
@@ -558,7 +562,7 @@ kbd {
 .dialog-header h2 { margin: 0; font-size: clamp(18px, 4vw, 24px); }
 .dialog-header p { margin: 4px 0 0; font-size: 12px; color: #b3c1d7; }
 .dialog-footer { border-top: 1px solid var(--line); flex-wrap: wrap; }
-.dialog-footer .artwork-upload, .dialog-footer .presentation-actions { margin-right: auto; }
+.dialog-footer .artwork-upload { margin-right: auto; }
 .dialog-footer button, .dialog-header button { min-height: 38px; }
 .artwork-body {
   display: grid;
@@ -629,7 +633,17 @@ kbd {
 #artwork-message { display: block; color: var(--gold); font-size: 12px; }
 #artwork-message:empty { display: none; }
 #presentation-canvas { display: block; width: 100%; height: auto; }
-.presentation-actions [aria-pressed="true"] { border-color: var(--pink); color: #ffe6fa; }
+#editor-screen[hidden], #presentation-screen[hidden], #presentation-empty[hidden],
+#presentation-edit-icon[hidden], .editor-dialog:not([open]) { display: none; }
+.editor-dialog.dialog-fallback {
+  display: block;
+  position: fixed;
+  z-index: 20;
+  inset: 12px 0;
+  height: fit-content;
+  max-height: calc(100vh - 24px);
+  box-shadow: 0 0 0 100vmax #030813bd;
+}
 @media (max-width: 660px) {
   .artwork-body { grid-template-columns: minmax(0, 1fr); padding: 12px; gap: 12px; }
   .dialog-header, .dialog-footer { padding: 10px 12px; }
