@@ -62,6 +62,7 @@ int main(void) {
     snprintf(cfg.frame_text, sizeof(cfg.frame_text), "FIRST FRAME TEXT");
     cfg.x = 89;
     cfg.artwork[LAD_ART_FRAME].brightness = 25;
+    cfg.artwork[LAD_ART_FRAME].contrast = -50;
     designer_store_active_frame(&cfg);
     designer_load_active_frame(&cfg, 0, 2, &fallback);
     snprintf(cfg.button_image, sizeof(cfg.button_image), "ux0:/data/frame2-blue.png");
@@ -79,17 +80,28 @@ int main(void) {
     /* Run this test from build/host-test so that settings.ini stays temporary. */
     mkdir("ux0:data", 0777);
     mkdir("ux0:data/LiveAreaDesigner", 0777);
-    assert(designer_save(&cfg));
     DesignerConfig restored;
+    FILE *legacy = fopen("ux0:data/LiveAreaDesigner/settings.ini", "w");
+    assert(legacy);
+    fputs("artwork.3=0,0,0,0,0,0,15,1,25,50,75\n", legacy);
+    assert(fclose(legacy) == 0);
+    designer_load(&restored);
+    assert(restored.artwork[LAD_ART_ICON].brightness == 15);
+    assert(restored.artwork[LAD_ART_ICON].contrast == 0);
+    assert(restored.artwork[LAD_ART_ICON].blue == 75);
+
+    assert(designer_save(&cfg));
     designer_load(&restored);
     assert(restored.frame_id == 1 && restored.w == 126);
     assert(restored.invert_x == 1 && restored.invert_y == 1);
     assert(restored.artwork[LAD_ART_FRAME].brightness == 25);
+    assert(restored.artwork[LAD_ART_FRAME].contrast == -50);
     assert(restored.artwork[LAD_ART_ICON].solid == 1);
     assert(restored.artwork[LAD_ART_ICON].blue == 200);
     designer_load_active_frame(&restored, 0, 2, &fallback);
     assert(restored.w == 98);
     assert(restored.artwork[LAD_ART_FRAME].brightness == 0);
+    assert(restored.artwork[LAD_ART_FRAME].contrast == 0);
     assert(restored.artwork[LAD_ART_FRAME].crop_x == -60);
     assert(strcmp(restored.frame_text, "SECOND FRAME TEXT") == 0);
     assert(strcmp(restored.button_image, "ux0:/data/frame2-blue.png") == 0);

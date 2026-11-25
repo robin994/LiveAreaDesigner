@@ -19,7 +19,7 @@ typedef enum {
 /* Crop dimensions and offsets are percentages. Zero is the neutral edit. */
 typedef struct {
     int crop_width, crop_height, crop_x, crop_y;
-    int hue, saturation, brightness;
+    int hue, saturation, brightness, contrast;
     int solid, red, green, blue;
 } LadArtwork;
 

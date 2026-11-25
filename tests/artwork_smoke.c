@@ -33,6 +33,13 @@ int main(void) {
     assert(result && !memcmp(result->pixels, (Uint8[]){0, 0, 200, 128}, 4));
     SDL_FreeSurface(result);
 
+    edit.contrast = -50;
+    assert(lad_artwork_edited(&(LadArtwork){.contrast = -50}));
+    result = lad_artwork_render(source, &edit, 2, 2, matte, true);
+    assert(result && !memcmp(result->pixels, (Uint8[]){64, 64, 164, 128}, 4));
+    SDL_FreeSurface(result);
+    edit.contrast = 0;
+
     edit.saturation = -100;
     edit.brightness = 10;
     result = lad_artwork_render(source, &edit, 2, 2, matte, true);

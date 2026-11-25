@@ -1,6 +1,6 @@
 const ranges = {
   cropWidth: [0, 95], cropHeight: [0, 95], cropX: [-100, 100], cropY: [-100, 100],
-  hue: [-180, 180], saturation: [-100, 100], brightness: [-100, 100],
+  hue: [-180, 180], saturation: [-100, 100], brightness: [-100, 100], contrast: [-100, 100],
   red: [0, 255], green: [0, 255], blue: [0, 255]
 };
 
@@ -15,7 +15,7 @@ export function normalizeArtwork(values) {
 
 export function hasArtworkEdits(edit) {
   return Boolean(edit?.solid || edit?.cropWidth || edit?.cropHeight ||
-    edit?.hue || edit?.saturation || edit?.brightness);
+    edit?.hue || edit?.saturation || edit?.brightness || edit?.contrast);
 }
 
 export function solidColor(edit) {
@@ -46,15 +46,16 @@ function adjustColor(pixels, edit) {
   const angle = edit.hue * Math.PI / 180;
   const c = Math.cos(angle), s = Math.sin(angle);
   const sat = 1 + edit.saturation / 100;
-  const brightness = edit.brightness * 255 / 100;
+  const contrast = 1 + edit.contrast / 100;
+  const offset = (1 - contrast) * 128 + edit.brightness * 255 / 100;
   for (let i = 0; i < pixels.length; i += 4) {
     const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
     const luma = .213 * r + .715 * g + .072 * b;
-    pixels[i] = Math.round(luma + sat * (c * (r - luma) + s * (b - luma)) + brightness);
-    pixels[i + 1] = Math.round(luma + sat * (c * (g - luma) +
-      s * (.143 * r + .140 * g - .283 * b)) + brightness);
-    pixels[i + 2] = Math.round(luma + sat * (c * (b - luma) +
-      s * (-.787 * r + .715 * g + .072 * b)) + brightness);
+    pixels[i] = Math.round((luma + sat * (c * (r - luma) + s * (b - luma))) * contrast + offset);
+    pixels[i + 1] = Math.round((luma + sat * (c * (g - luma) +
+      s * (.143 * r + .140 * g - .283 * b))) * contrast + offset);
+    pixels[i + 2] = Math.round((luma + sat * (c * (b - luma) +
+      s * (-.787 * r + .715 * g + .072 * b))) * contrast + offset);
   }
 }
 
@@ -71,7 +72,8 @@ export function paintArtwork(context, source, edit, x, y, w, h, width = w, heigh
   const image = source.image;
   const crop = edit ? cropRect(image.naturalWidth, image.naturalHeight, edit) :
     { x: 0, y: 0, w: image.naturalWidth, h: image.naturalHeight };
-  if (!edit?.solid && !edit?.hue && !edit?.saturation && !edit?.brightness) {
+  const colorAdjusted = edit?.hue || edit?.saturation || edit?.brightness || edit?.contrast;
+  if (!edit?.solid && !colorAdjusted) {
     // Clip sampling at the crop edges so interpolated pixels cannot bleed
     // in from sections the user excluded.
     if (crop.x === 0 && crop.y === 0 && crop.w === image.naturalWidth && crop.h === image.naturalHeight) {
@@ -98,7 +100,7 @@ export function paintArtwork(context, source, edit, x, y, w, h, width = w, heigh
       buffer.globalCompositeOperation = 'source-in';
       buffer.fillStyle = solidColor(edit);
       buffer.fillRect(0, 0, width, height);
-    } else if (edit.hue || edit.saturation || edit.brightness) {
+    } else if (colorAdjusted) {
       const pixels = buffer.getImageData(0, 0, width, height);
       adjustColor(pixels.data, edit);
       buffer.putImageData(pixels, 0, 0);

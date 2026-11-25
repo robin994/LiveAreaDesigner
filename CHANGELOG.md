@@ -1,5 +1,9 @@
 # Changelog
 
+## Web Editor 1.33.2 - 2026-11-25
+
+- Add per-image contrast controls with live previews and VPK export in the web editor and native Vita source. Earlier saved projects default to neutral contrast.
+
 ## Web Editor 1.33.1 - 2026-11-25
 
 - Place LiveArea and Home Bubble above the main canvas and render both views inline. The artwork editor also opens in WebViews without native modal dialog support.

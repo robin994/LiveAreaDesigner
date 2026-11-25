@@ -5,7 +5,7 @@ import {
   dragLayout, stepLayout
 } from "./geometry.mjs?v=1.33";
 import { generateTemplate } from "./template.mjs?v=1.33";
-import { buildLiveAreaPackage } from "./package.mjs?v=1.33.1";
+import { buildLiveAreaPackage } from "./package.mjs?v=1.33.2";
 import {
   previewGate, previewFrames, previewSummary, frameRelativeOffsets, hasStartupGate,
   imageFitsSelectedFrame, fitImageToSelectedFrame, selectedFrame
@@ -17,8 +17,8 @@ import { readVpk, patchVpk } from "./vpk.mjs?v=1.33";
 import { readVpkProject } from "./vpk-import.mjs?v=1.33";
 import { getRcoLayout } from "./template-slots.mjs?v=1.33";
 
-import { createArtworkEditor } from "./artwork-editor.mjs?v=1.33.1";
-import { frameInProject, hasArtworkEdits, normalizeArtwork, paintArtwork, solidColor, tintedSource } from "./artwork.mjs?v=1.33.1";
+import { createArtworkEditor } from "./artwork-editor.mjs?v=1.33.2";
+import { frameInProject, hasArtworkEdits, normalizeArtwork, paintArtwork, solidColor, tintedSource } from "./artwork.mjs?v=1.33.2";
 import { drawBubble, drawHomePreview, drawScreenBackdrop } from "./presentation.mjs?v=1.33";
 
 const PREFS_KEY = "livearea-designer-web-v1";

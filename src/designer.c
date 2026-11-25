@@ -556,6 +556,7 @@ static const ArtworkControl artwork_controls[] = {
     CONTROL("HUE", hue, -180, 180, 3),
     CONTROL("SATURATION", saturation, -100, 100, 2),
     CONTROL("BRIGHTNESS", brightness, -100, 100, 2),
+    CONTROL("CONTRAST", contrast, -100, 100, 2),
     CONTROL("SOLID COLOR", solid, 0, 1, 1),
     CONTROL("RED", red, 0, 255, 4),
     CONTROL("GREEN", green, 0, 255, 4),
@@ -565,7 +566,8 @@ static const ArtworkControl artwork_controls[] = {
 
 #define ARTWORK_ROWS ((int)(sizeof(artwork_controls) / sizeof(artwork_controls[0])))
 #define ARTWORK_ROW_Y 77
-#define ARTWORK_ROW_H 35
+#define ARTWORK_ROW_H 32
+#define ARTWORK_FILL_ROW 8
 #define ARTWORK_SLIDER_X 700
 #define ARTWORK_SLIDER_W 166
 
@@ -587,8 +589,8 @@ static int selected_artwork(const App *a) {
 }
 static bool artwork_control_enabled(const App *a, int row) {
     if (row < 4) return a->artwork_source != NULL;
-    if (row < 7) return a->artwork_source && !a->artwork_draft.solid;
-    return row == 7 || a->artwork_draft.solid;
+    if (row < ARTWORK_FILL_ROW) return a->artwork_source && !a->artwork_draft.solid;
+    return row == ARTWORK_FILL_ROW || a->artwork_draft.solid;
 }
 static void close_artwork(App *a) {
     SDL_FreeSurface(a->artwork_source);
@@ -616,7 +618,7 @@ static void open_artwork(App *a, int target) {
         replace_preview(a, &a->artwork_original, a->artwork_source, &(LadArtwork){0},
                         a->artwork_source_bounds, false, palette[8], true);
     }
-    a->artwork_row = artwork_control_enabled(a, 0) ? 0 : 7;
+    a->artwork_row = artwork_control_enabled(a, 0) ? 0 : ARTWORK_FILL_ROW;
     a->artwork_preview_dirty = true;
     a->message_until = SDL_GetTicks();
     a->screen = SCREEN_ARTWORK;
@@ -653,7 +655,7 @@ static void fit_artwork_crop(App *a) {
 }
 static void reset_artwork(App *a) {
     a->artwork_draft = (LadArtwork){0};
-    if (!artwork_control_enabled(a, a->artwork_row)) a->artwork_row = 7;
+    if (!artwork_control_enabled(a, a->artwork_row)) a->artwork_row = ARTWORK_FILL_ROW;
     a->artwork_preview_dirty = true;
 }
 static void change_artwork(App *a, int value) {
@@ -735,7 +737,7 @@ static void pointer_down(App *a, int x, int y) {
             const int row = (y - ARTWORK_ROW_Y) / ARTWORK_ROW_H;
             if (!artwork_control_enabled(a, row)) return;
             a->artwork_row = row;
-            if (row == 7) change_artwork(a, !a->artwork_draft.solid);
+            if (row == ARTWORK_FILL_ROW) change_artwork(a, !a->artwork_draft.solid);
             else if (x >= ARTWORK_SLIDER_X - 12) {
                 a->drag = true;
                 a->artwork_drag_crop = false;
@@ -1526,8 +1528,8 @@ static void draw_artwork(App *a) {
         const SDL_Color color = enabled ? TEXT : (SDL_Color){112, 124, 151, 255};
         if (row == a->artwork_row)
             outline(r, (Rect){492, y + 1, 432, ARTWORK_ROW_H - 2}, GOLD);
-        label(a, 502, y + 9, row == 7 && a->artwork_source ? "TINT IMAGE" : control->name, 2, color, 0);
-        if (row == 7) {
+        label(a, 502, y + 9, row == ARTWORK_FILL_ROW && a->artwork_source ? "TINT IMAGE" : control->name, 2, color, 0);
+        if (row == ARTWORK_FILL_ROW) {
             label(a, ARTWORK_SLIDER_X, y + 9, amount ? "ON" : "OFF", 2, TEXT, 0);
             if (amount) {
                 SDL_Color swatch = {a->artwork_draft.red, a->artwork_draft.green,

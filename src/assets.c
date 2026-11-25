@@ -101,20 +101,20 @@ void designer_load_active_frame(DesignerConfig *cfg, int style, int id,
 
 static void read_artwork(const char *value, LadArtwork *art) {
     LadArtwork parsed = {0};
-    /* Limit conversion width so even manually edited INIs cannot overflow int. */
-    if (sscanf(value, "%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d",
+    /* Old settings end at blue. The optional last field defaults to neutral. */
+    if (sscanf(value, "%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d",
                &parsed.crop_width, &parsed.crop_height, &parsed.crop_x,
                &parsed.crop_y, &parsed.hue, &parsed.saturation,
                &parsed.brightness, &parsed.solid, &parsed.red,
-               &parsed.green, &parsed.blue) == 11)
+               &parsed.green, &parsed.blue, &parsed.contrast) >= 11)
         *art = parsed;
 }
 
 static int write_artwork(FILE *file, const char *key, const LadArtwork *art) {
-    return fprintf(file, "%s=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", key,
+    return fprintf(file, "%s=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", key,
                    art->crop_width, art->crop_height, art->crop_x, art->crop_y,
                    art->hue, art->saturation, art->brightness, art->solid,
-                   art->red, art->green, art->blue);
+                   art->red, art->green, art->blue, art->contrast);
 }
 
 void designer_load(DesignerConfig *cfg) {

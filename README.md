@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — Web Editor 1.33.1 / native Vita VPK 1.33, lossless frame1 artwork, editable LiveArea gates and VPK editing.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — Web Editor 1.33.2 / native Vita VPK 1.33, lossless frame1 artwork, editable LiveArea gates and VPK editing.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -33,7 +33,7 @@ Everything runs in your browser; images never leave your computer. Choose PNG/JP
 ### Edit artwork and export screenshots in the browser
 
 - Use **Edit** on the card, a frame, the startup image, the bubble or the bootscreen. Upload a PNG/JPG, drag the crop rectangle or its lower-right corner, or use **Center crop to output ratio**. The crop sliders also work with the keyboard.
-- Set hue, saturation and brightness, or set RGB with **Tint image**. Tint keeps the image’s alpha mask. **Solid color** fills the entire asset when no source is loaded. **Apply** saves edits for that asset and frame in the browser. The original image stays available for resetting the crop and adjustments. Edited art is used in both the asset ZIP and patched VPK.
+- Set hue, saturation, brightness and contrast, or set RGB with **Tint image**. Tint keeps the image’s alpha mask. **Solid color** fills the entire asset when no source is loaded. **Apply** saves edits for that asset and frame in the browser. The original image stays available for resetting the crop and adjustments. Edited art is used in both the asset ZIP and patched VPK.
 - Use **LiveArea** and **Home Bubble** above the main canvas. The LiveArea view composites the card, configured frames and gate using the selected RCO layout. **Home Bubble** shows the edited icon as a circular preview with shell-style shading. In either view, **Export screenshot (.png)** downloads a 960 × 544 image without editing guides. The shell theme and effects are simulated. Vita PNG8 export can also reduce the palette of complex artwork.
 
 ### Edit an existing VPK in the browser
@@ -110,7 +110,7 @@ The native **Template + VPK** Settings tab has **Open VPK** and **Patch VPK** co
 
 - In **Settings**, select a background, frame, startup image, bubble or boot screen row and press **Triangle**, or tap **Edit** beside **Browse**. The **Icon** shortcut opens the icon editor directly.
 - Adjust crop width and height, then drag the highlighted area on the source preview or use **Crop X/Y**. **Center Crop** uses the destination aspect ratio. The D-pad selects and adjusts controls, and **R** increases the adjustment step.
-- Adjust hue, saturation and brightness or use **Tint Image** to apply RGB through the image’s alpha mask. With no source image, **Solid Color** fills the entire asset. **Cross** applies the settings, **Square** resets the draft and **Circle** cancels. The editor retains the source PNG/JPG. Applied settings are saved per asset and per frame and used by both **Export XML** and **Patch VPK**.
+- Adjust hue, saturation, brightness and contrast or use **Tint Image** to apply RGB through the image’s alpha mask. With no source image, **Solid Color** fills the entire asset. **Cross** applies the settings, **Square** resets the draft and **Circle** cancels. The editor retains the source PNG/JPG. Applied settings are saved per asset and per frame and used by both **Export XML** and **Patch VPK**.
 - The bubble editor shows the square 128 × 128 icon beside a circular home screen preview. **LiveArea View** shows the composition using the selected RCO layout without the editing guides. The system shell, its animations and final on-device appearance are outside the preview.
 
 The `LIVAREA01` package also includes its own bubble icon, LiveArea background and startup artwork.

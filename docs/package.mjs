@@ -1,4 +1,4 @@
-import { frameInProject, hasArtworkEdits, paintArtwork, tintedSource } from "./artwork.mjs?v=1.33.1";
+import { frameInProject, hasArtworkEdits, paintArtwork, tintedSource } from "./artwork.mjs?v=1.33.2";
 import { CARD, PALETTE } from "./geometry.mjs?v=1.33";
 import { generateTemplate } from "./template.mjs?v=1.33";
 import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.33";

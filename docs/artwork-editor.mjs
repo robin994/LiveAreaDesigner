@@ -1,4 +1,4 @@
-import { centerCrop, cropRect, moveCropAxis, normalizeArtwork, paintArtwork, solidColor, tintedSource } from './artwork.mjs?v=1.33.1';
+import { centerCrop, cropRect, moveCropAxis, normalizeArtwork, paintArtwork, solidColor, tintedSource } from './artwork.mjs?v=1.33.2';
 import { drawBubble } from './presentation.mjs?v=1.33';
 
 export function createArtworkEditor({ onApply, onUpload }) {
@@ -25,6 +25,7 @@ export function createArtworkEditor({ onApply, onUpload }) {
     ['hue', 'Hue', -180, 180, '°'],
     ['saturation', 'Saturation', -100, 100, '%'],
     ['brightness', 'Brightness', -100, 100, '%'],
+    ['contrast', 'Contrast', -100, 100, '%'],
     ['red', 'Red', 0, 255, ''],
     ['green', 'Green', 0, 255, ''],
     ['blue', 'Blue', 0, 255, '']
@@ -43,9 +44,10 @@ export function createArtworkEditor({ onApply, onUpload }) {
     const value = document.createElement('output');
     value.setAttribute('for', slider.id);
     label.append(caption, slider, value);
-    byId(i < 7 ? 'artwork-adjustments' : 'artwork-rgb').append(label);
+    const rgb = i >= specs.length - 3;
+    byId(!rgb ? 'artwork-adjustments' : 'artwork-rgb').append(label);
     slider.addEventListener('input', () => update({ [name]: slider.value }));
-    return { name, slider, value, unit };
+    return { name, slider, value, unit, rgb, colorAdjustment: !rgb && i >= 4 };
   });
 
   function update(change) {
@@ -58,11 +60,10 @@ export function createArtworkEditor({ onApply, onUpload }) {
     if (!current || !isOpen()) return;
     const { source, width, height, transparent, background, target } = current;
     const image = source?.image;
-    for (const { name, slider, value, unit } of controls) {
+    for (const { name, slider, value, unit, rgb, colorAdjustment } of controls) {
       slider.value = draft[name];
       value.textContent = draft[name] + unit;
-      if (name === 'red' || name === 'green' || name === 'blue') slider.disabled = !draft.solid;
-      if (name === 'hue' || name === 'saturation' || name === 'brightness') slider.disabled = draft.solid;
+      slider.disabled = (rgb && !draft.solid) || (colorAdjustment && draft.solid);
     }
     solid.checked = draft.solid;
     fillLabel.textContent = image ? 'Tint image' : 'Solid color';

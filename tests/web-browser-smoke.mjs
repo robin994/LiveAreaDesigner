@@ -1158,6 +1158,18 @@ try {
     picker.dispatchEvent(new Event("input", { bubbles: true }));
     document.getElementById("artwork-apply").click();
   })()`);
+  await evaluate(`(() => {
+    const frame = document.getElementById("xml-frame");
+    frame.value = "3";
+    frame.dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById("button-edit").click();
+    const contrast = document.getElementById("artwork-contrast");
+    contrast.value = "-50";
+    contrast.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(async () => JSON.stringify(await evaluate(iconPixel)) === "[176,74,168,255]",
+    "frame output preview reflects contrast only");
+  await evaluate('document.getElementById("artwork-apply").click()');
   await evaluate('document.getElementById("show-livearea").click()');
   assert.deepEqual(await evaluate(`Array.from(document.getElementById("presentation-canvas")
     .getContext("2d").getImageData(90, 48, 1, 1).data)`), [25, 54, 83, 255]);
@@ -1202,7 +1214,8 @@ try {
   assert.deepEqual(untouchedGate, Buffer.from(await evaluate("window.originalFixtureGate")));
   for (const [path, expected] of [["sce_sys/icon0.png", [166, 100, 40, 255]],
     ["sce_sys/pic0.png", [166, 100, 40, 255]], ["sce_sys/livearea/contents/bg0.png", [25, 54, 83, 255]],
-    ["sce_sys/livearea/contents/frame1.png", [32, 64, 96, 255]]]) {
+    ["sce_sys/livearea/contents/frame1.png", [32, 64, 96, 255]],
+    ["sce_sys/livearea/contents/frame3.png", [176, 74, 168, 255]]]) {
     const file = execFileSync("unzip", ["-p", modifiedName, path]);
     const rgba = await evaluate(`(async () => {
       const png = await fetch("data:image/png;base64,${file.toString("base64")}").then(res => res.blob());
@@ -1226,6 +1239,10 @@ try {
   await evaluate('document.getElementById("icon-edit").click()');
   assert.equal(await evaluate('document.getElementById("artwork-cropX").value'), "100");
   await evaluate('document.getElementById("artwork-dialog").close()');
+  await evaluate('document.getElementById("button-edit").click()');
+  assert.equal(await evaluate('document.getElementById("artwork-contrast").value'), "-50",
+    "Independent frame contrast survives reload");
+  await evaluate('document.getElementById("artwork-close").click()');
 
   await screenshot("desktop.png");
   await send("Emulation.setDeviceMetricsOverride", {

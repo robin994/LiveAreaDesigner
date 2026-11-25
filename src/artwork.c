@@ -18,6 +18,7 @@ void lad_artwork_normalize(LadArtwork *art) {
     art->hue = clamp(art->hue, -180, 180);
     art->saturation = clamp(art->saturation, -100, 100);
     art->brightness = clamp(art->brightness, -100, 100);
+    art->contrast = clamp(art->contrast, -100, 100);
     art->solid = art->solid != 0;
     art->red = clamp(art->red, 0, 255);
     art->green = clamp(art->green, 0, 255);
@@ -26,7 +27,7 @@ void lad_artwork_normalize(LadArtwork *art) {
 
 bool lad_artwork_edited(const LadArtwork *art) {
     return art->solid || art->crop_width || art->crop_height || art->hue ||
-           art->saturation || art->brightness;
+           art->saturation || art->brightness || art->contrast;
 }
 
 SDL_Surface *lad_artwork_load(const char *path) {
@@ -67,23 +68,26 @@ static Uint8 channel(float value) {
 }
 
 static void adjust_color(SDL_Surface *image, const LadArtwork *art) {
-    if (!art->hue && !art->saturation && !art->brightness) return;
+    if (!art->hue && !art->saturation && !art->brightness && !art->contrast) return;
     const float angle = art->hue * (3.14159265f / 180.0f);
     const float c = cosf(angle), s = sinf(angle);
     const float saturation = 1.0f + art->saturation / 100.0f;
-    const float brightness = art->brightness * (255.0f / 100.0f);
+    const float contrast = 1.0f + art->contrast / 100.0f;
+    const float offset = (1.0f - contrast) * 128.0f + art->brightness * (255.0f / 100.0f);
     for (int y = 0; y < image->h; ++y) {
         Uint8 *pixel = (Uint8 *)image->pixels + y * image->pitch;
         for (int x = 0; x < image->w; ++x, pixel += 4) {
             const float r = pixel[0], g = pixel[1], b = pixel[2];
             const float luma = .213f * r + .715f * g + .072f * b;
             /* Rotate hue around luminance, then scale distance from gray. */
-            pixel[0] = channel(luma + saturation *
-                (c * (r - luma) + s * (b - luma)) + brightness);
-            pixel[1] = channel(luma + saturation *
-                (c * (g - luma) + s * (.143f * r + .140f * g - .283f * b)) + brightness);
-            pixel[2] = channel(luma + saturation *
-                (c * (b - luma) + s * (-.787f * r + .715f * g + .072f * b)) + brightness);
+            const float adjusted_r = luma + saturation * (c * (r - luma) + s * (b - luma));
+            const float adjusted_g = luma + saturation *
+                (c * (g - luma) + s * (.143f * r + .140f * g - .283f * b));
+            const float adjusted_b = luma + saturation *
+                (c * (b - luma) + s * (-.787f * r + .715f * g + .072f * b));
+            pixel[0] = channel(adjusted_r * contrast + offset);
+            pixel[1] = channel(adjusted_g * contrast + offset);
+            pixel[2] = channel(adjusted_b * contrast + offset);
         }
     }
 }
