@@ -1041,6 +1041,22 @@ try {
     ];
     for (const item of originalAssets.entries)
       files.push({ name: item.name, data: await readArchiveEntry(originalAssets, item) });
+    const { encodeIndexedPng } = await import("./package.mjs");
+    const icon = new Uint8ClampedArray(128 * 128 * 4);
+    for (let i = 0; i < icon.length; i += 4) {
+      const left = (i / 4) % 128 < 64;
+      icon[i] = left ? 255 : 0;
+      icon[i + 2] = left ? 0 : 200;
+      icon[i + 3] = 255;
+    }
+    files.push({ name: "sce_sys/icon0.png", data: await encodeIndexedPng(128, 128, icon) });
+    const prefix = "sce_sys/livearea/contents/";
+    const template = files.find(item => item.name === prefix + "template.xml");
+    const xml = new DOMParser().parseFromString(new TextDecoder().decode(template.data), "text/xml");
+    xml.querySelector('[id="frame2"]').remove();
+    template.data = new XMLSerializer().serializeToString(xml);
+    files.splice(files.findIndex(item => item.name === prefix + "frame2.png"), 1);
+    window.originalFixtureGate = Array.from(files.find(item => item.name === prefix + "startup.png").data);
     const vpk = makeZip(files);
     const file = new File([vpk], "smoke-existing.vpk", {type:"application/zip"});
     const transfer = new DataTransfer();
@@ -1056,6 +1072,81 @@ try {
     "bg0.png", "Import must restore the LiveArea background image");
   assert.equal(await evaluate('document.getElementById("xml-style").value'), "a2");
   assert.equal(await evaluate('document.getElementById("template-preview-state").textContent'), "ON");
+  await evaluate(`(() => {
+    document.getElementById("icon-edit").click();
+    document.getElementById("artwork-center").click();
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("artwork-cropWidth").value === "0"'),
+    "square icon keeps matching aspect");
+  await evaluate(`(() => {
+    const width = document.getElementById("artwork-cropWidth");
+    width.value = "50";
+    width.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("crop-selection").style.width === "50%"'),
+    "crop width renders on the source");
+  const cropCenter = await evaluate(`(() => {
+    const r = document.getElementById("crop-selection").getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width };
+  })()`);
+  await mouse("mousePressed", cropCenter.x, cropCenter.y, 1);
+  await pause(100);
+  await mouse("mouseMoved", cropCenter.x + cropCenter.w, cropCenter.y, 1);
+  await pause(100);
+  await mouse("mouseReleased", cropCenter.x + cropCenter.w, cropCenter.y);
+  await waitFor(() => evaluate('document.getElementById("artwork-cropX").value === "100"'),
+    "drag crop to right edge");
+  await evaluate(`(() => {
+    for (const [id, value] of [["artwork-hue", "60"], ["artwork-saturation", "-100"], ["artwork-brightness", "20"]]) {
+      const input = document.getElementById(id);
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  })()`);
+  const iconPixel = 'Array.from(document.getElementById("artwork-output").getContext("2d").getImageData(2, 2, 1, 1).data)';
+  await waitFor(async () => JSON.stringify(await evaluate(iconPixel)) === "[65,65,65,255]", "edited icon RGB preview");
+  assert.equal(await evaluate('document.getElementById("artwork-bubble").getContext("2d").getImageData(0, 0, 1, 1).data[3]'), 0,
+    "The shell's bubble mask is only in the preview");
+  await screenshot("web-artwork-editor.png");
+  await evaluate('document.getElementById("artwork-apply").click()');
+  await evaluate(`(() => {
+    for (const [target, color] of [["card", "#193653"], ["boot", "#a66428"]]) {
+      document.getElementById(target + "-edit").click();
+      document.getElementById("artwork-solid").click();
+      const picker = document.getElementById("artwork-color");
+      picker.value = color;
+      picker.dispatchEvent(new Event("input", { bubbles: true }));
+      document.getElementById("artwork-apply").click();
+    }
+  })()`);
+  await waitFor(() => evaluate('document.getElementById("boot-filename").textContent.includes("#A66428")'),
+    "solid RGB without an uploaded image");
+  // One frame can use a solid fill independently of the other imported frames.
+  await evaluate(`(() => {
+    document.getElementById("button-edit").click();
+    document.getElementById("artwork-solid").click();
+    const picker = document.getElementById("artwork-color");
+    picker.value = "#204060";
+    picker.dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById("artwork-apply").click();
+  })()`);
+  await evaluate('document.getElementById("show-livearea").click()');
+  assert.deepEqual(await evaluate(`Array.from(document.getElementById("presentation-canvas")
+    .getContext("2d").getImageData(90, 48, 1, 1).data)`), [25, 54, 83, 255]);
+  await evaluate('document.getElementById("presentation-export").click()');
+  await evaluate('document.getElementById("presentation-bubble").click()');
+  await evaluate('document.getElementById("presentation-export").click()');
+  await evaluate('document.getElementById("presentation-dialog").close()');
+  for (const filename of ["vita-livearea.png", "vita-home-bubble.png"]) {
+    const bytes = await waitFor(async () => {
+      try { return await readFile(join(downloads, filename)); } catch { return false; }
+    }, filename);
+    assert.equal(bytes.readUInt32BE(16), 960);
+    assert.equal(bytes.readUInt32BE(20), 544);
+    await writeFile(join(output, filename), bytes);
+  }
+  console.log("PASS: drag crop, adjusted icon, RGB fill and both 960 × 544 screenshot downloads");
+
   await evaluate(`(() => {
     const input = document.getElementById("xml-text");
     input.value = "EDITED THROUGH VPK";
@@ -1078,7 +1169,31 @@ try {
   assert.equal(modifiedEboot, "UNCHANGED_EBOOT_TEST_1234");
   assert.match(modifiedTemplate, /EDITED THROUGH VPK/);
   assert.match(modifiedTemplate, /<livearea style="a2"/);
+  assert.doesNotMatch(modifiedTemplate, /frame2\.png/, "Unused imported slots stay empty");
+  const untouchedGate = execFileSync("unzip", ["-p", modifiedName, "sce_sys/livearea/contents/startup.png"]);
+  assert.deepEqual(untouchedGate, Buffer.from(await evaluate("window.originalFixtureGate")));
+  for (const [path, expected] of [["sce_sys/icon0.png", [65, 65, 65, 255]],
+    ["sce_sys/pic0.png", [166, 100, 40, 255]], ["sce_sys/livearea/contents/bg0.png", [25, 54, 83, 255]],
+    ["sce_sys/livearea/contents/frame1.png", [32, 64, 96, 255]]]) {
+    const file = execFileSync("unzip", ["-p", modifiedName, path]);
+    const rgba = await evaluate(`(async () => {
+      const png = await fetch("data:image/png;base64,${file.toString("base64")}").then(res => res.blob());
+      const image = await createImageBitmap(png);
+      const canvas = new OffscreenCanvas(image.width, image.height);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(image, 0, 0);
+      return [...ctx.getImageData(0, 0, 1, 1).data];
+    })()`);
+    assert.deepEqual(rgba, expected, path + " applies the edited color in the patched VPK");
+  }
   console.log("PASS: import/edit/patch VPK with original executable and game assets intact");
+
+  await send("Page.reload", { ignoreCache: true });
+  await waitFor(() => evaluate('document.getElementById("icon-filename").textContent.includes("edited")'),
+    "persist icon edits and source across reload");
+  await evaluate('document.getElementById("icon-edit").click()');
+  assert.equal(await evaluate('document.getElementById("artwork-cropX").value'), "100");
+  await evaluate('document.getElementById("artwork-dialog").close()');
 
   await screenshot("desktop.png");
   await send("Emulation.setDeviceMetricsOverride", {
@@ -1101,6 +1216,29 @@ try {
   assert.ok(pageState.scrollWidth <= 392, "No horizontal overflow on mobile");
   assert.ok(pageState.canvasWidth > 300 && pageState.canvasWidth < 400);
   console.log("PASS: mobile layout without horizontal overflow");
+  await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+  await waitFor(() => evaluate('document.getElementById("icon-filename").textContent.includes("edited")'),
+    "restored icon before mobile crop");
+  await evaluate('document.getElementById("icon-edit").click()');
+  const grip = await evaluate(`(() => {
+    const r = document.getElementById("crop-handle").getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+  await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [grip] });
+  await pause(90);
+  await send("Input.dispatchTouchEvent", { type: "touchMove",
+    touchPoints: [{ x: grip.x - 20, y: grip.y - 24 }] });
+  await pause(90);
+  await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await waitFor(() => evaluate('Number(document.getElementById("artwork-cropHeight").value) > 0'),
+    "resize crop with touch on its handle");
+  await evaluate('document.getElementById("artwork-dialog").close()');
+  await evaluate('document.getElementById("icon-edit").click()');
+  assert.equal(await evaluate('document.getElementById("artwork-cropHeight").value'), "0",
+    "Closing a draft does not save its changes");
+  await screenshot("web-artwork-mobile.png");
+  await evaluate('document.getElementById("artwork-dialog").close()');
+  console.log("PASS: mobile touch crop resizing and cancel");
 
   await waitFor(() => evaluate(
     '!document.getElementById("card-clear").disabled && document.getElementById("card-filename").textContent !== "No image selected"'

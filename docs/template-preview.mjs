@@ -1,5 +1,5 @@
-import { CARD, centeredOffsets, buttonOnScreen, normalizeLayout, MIN_BUTTON_SIZE } from "./geometry.mjs?v=1.32";
-import { getRcoLayout } from "./template-slots.mjs?v=1.32";
+import { CARD, centeredOffsets, buttonOnScreen, normalizeLayout, MIN_BUTTON_SIZE } from "./geometry.mjs?v=1.33";
+import { getRcoLayout } from "./template-slots.mjs?v=1.33";
 
 export const GATE_WIDTH = 280;
 export const GATE_HEIGHT = 158;

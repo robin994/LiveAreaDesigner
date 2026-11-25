@@ -33,6 +33,7 @@ void lad_resolve_frame(const DesignerConfig *cfg, int frame_id,
     memset(out, 0, sizeof(*out));
     if (cfg->frame_id == frame_id) {
         out->initialized = 1;
+        out->imported = cfg->imported_frame;
         out->x = cfg->x; out->y = cfg->y;
         out->w = cfg->w; out->h = cfg->h;
         out->button_color = cfg->button_color;
@@ -43,6 +44,7 @@ void lad_resolve_frame(const DesignerConfig *cfg, int frame_id,
         out->age_limit = cfg->age_limit;
         out->vita_only = cfg->vita_only;
         out->autoflip = cfg->autoflip;
+        out->artwork = cfg->artwork[LAD_ART_FRAME];
         snprintf(out->image, sizeof(out->image), "%s", cfg->button_image);
         snprintf(out->target, sizeof(out->target), "%s", cfg->frame_target);
         snprintf(out->text, sizeof(out->text), "%s", cfg->frame_text);
@@ -88,6 +90,11 @@ static void xml_escape(FILE *out, const char *s) {
     }
 }
 
+bool lad_include_frame(const DesignerConfig *cfg, const DesignerFrame *frame) {
+    return !cfg->imported_layout || frame->imported ||
+           frame->image[0] || frame->artwork.solid || frame->text[0];
+}
+
 bool lad_write_template(FILE *out, const DesignerConfig *c) {
     if (!out || !c) return false;
     int style = c->template_style;
@@ -108,6 +115,7 @@ bool lad_write_template(FILE *out, const DesignerConfig *c) {
     for (int frame = 1; frame <= max_frame; ++frame) {
         DesignerFrame item;
         lad_resolve_frame(c, frame, &item);
+        if (!lad_include_frame(c, &item)) continue;
         int xml_x, xml_y;
         lad_template_frame_offsets(style, frame,
             item.x + (item.w + 1) / 2 - 420,

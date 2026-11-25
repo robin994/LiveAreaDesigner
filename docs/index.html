@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=1.32">
-  <script type="module" src="./app.js?v=1.32"></script>
+  <link rel="stylesheet" href="./styles.css?v=1.33">
+  <script type="module" src="./app.js?v=1.33"></script>
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -23,11 +23,11 @@
       <span class="brand-name">LIVEAREA <strong>DESIGNER</strong><small>PS VITA DESIGN TOOL</small></span>
     </a>
     <div class="header-right">
-      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> POC 1.32</span>
+      <span class="version"><span class="status-dot" aria-hidden="true"></span>WEB EDITOR <span class="version-divider">/</span> 1.33</span>
       <a class="header-link" href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">
         GitHub <span aria-hidden="true">↗</span>
       </a>
-      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/tag/v1.31" title="Native Vita VPK v1.31; the optional manual gate is currently web-only" target="_blank" rel="noopener noreferrer">
+      <a class="download-link" href="https://github.com/robin994/LiveAreaDesigner/releases/latest" title="Download the latest published native Vita VPK" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 17v3h16v-3"/></svg>
         Download VPK
       </a>
@@ -91,6 +91,12 @@
           </div>
           <div class="preview-bottom">
             <div class="help-copy">Select a frame · Drag to move · Yellow corner to resize</div>
+            <div class="presentation-actions">
+              <button id="show-livearea" class="action-secondary" type="button">LiveArea View</button>
+              <button id="show-bubble" class="action-secondary" type="button">
+                <canvas id="bubble-thumb" width="48" height="48" aria-hidden="true" hidden></canvas> Home Bubble
+              </button>
+            </div>
           </div>
           <div id="template-preview-details" class="template-preview-details" hidden>
             <span id="template-preview-summary" aria-live="polite">Style a1 · frame3 · centered gate</span>
@@ -162,6 +168,7 @@
             </div>
             <div class="asset-buttons">
               <button type="button" class="asset-upload" id="card-upload">+ Upload PNG / JPG</button>
+              <button type="button" class="asset-edit" id="card-edit">Edit</button>
               <button type="button" class="asset-clear" id="card-clear" aria-label="Remove card image">Remove</button>
             </div>
             <input id="card-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
@@ -174,6 +181,7 @@
             </div>
             <div class="asset-buttons">
               <button type="button" class="asset-upload" id="button-upload">+ Upload frame image</button>
+              <button type="button" class="asset-edit" id="button-edit">Edit</button>
               <button type="button" class="asset-clear" id="button-clear" aria-label="Remove selected frame image">Remove</button>
             </div>
             <input id="button-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
@@ -193,6 +201,7 @@
             </div>
             <div class="asset-buttons">
               <button type="button" class="asset-upload" id="gate-upload">+ Upload PNG / JPG</button>
+              <button type="button" class="asset-edit" id="gate-edit">Edit</button>
               <button type="button" class="asset-clear" id="gate-clear" aria-label="Remove gate image">Remove</button>
             </div>
             <input id="gate-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
@@ -203,14 +212,16 @@
               <div class="asset-topline"><div class="asset-thumb" id="icon-thumb"><span class="asset-thumb-icon">▧</span></div>
                 <div class="asset-name"><strong>Bubble icon (icon0.png)</strong><span id="icon-filename">No image selected</span></div>
                 <span class="asset-tag">128 × 128</span></div>
-              <div class="asset-buttons"><button type="button" class="asset-upload" id="icon-upload">+ Upload</button><button type="button" class="asset-clear" id="icon-clear">Remove</button></div>
+              <div class="asset-buttons"><button type="button" class="asset-upload" id="icon-upload">+ Upload</button><button type="button" class="asset-edit" id="icon-edit">Edit</button>
+              <button type="button" class="asset-clear" id="icon-clear">Remove</button></div>
               <input id="icon-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
             </div>
             <div class="asset-card" id="boot-drop">
               <div class="asset-topline"><div class="asset-thumb" id="boot-thumb"><span class="asset-thumb-icon">▧</span></div>
                 <div class="asset-name"><strong>Bootscreen (pic0.png)</strong><span id="boot-filename">No image selected</span></div>
                 <span class="asset-tag">960 × 544</span></div>
-              <div class="asset-buttons"><button type="button" class="asset-upload" id="boot-upload">+ Upload</button><button type="button" class="asset-clear" id="boot-clear">Remove</button></div>
+              <div class="asset-buttons"><button type="button" class="asset-upload" id="boot-upload">+ Upload</button><button type="button" class="asset-edit" id="boot-edit">Edit</button>
+              <button type="button" class="asset-clear" id="boot-clear">Remove</button></div>
               <input id="boot-file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
             </div>
             <div class="asset-card" id="manual-drop">
@@ -294,6 +305,75 @@
       <span>This is a visual simulator; it exports template.xml and Vita PNG assets, but never modifies the system LiveArea. <a href="https://github.com/robin994/LiveAreaDesigner" target="_blank" rel="noopener noreferrer">Source code and MIT license ↗</a></span>
     </div>
   </main>
+
+  <dialog class="editor-dialog" id="artwork-dialog" aria-labelledby="artwork-title">
+    <header class="dialog-header">
+      <div><h2 id="artwork-title">Edit artwork</h2><p id="artwork-dimensions"></p></div>
+      <form method="dialog"><button class="action-secondary" type="submit">Close</button></form>
+    </header>
+    <div class="artwork-body">
+      <div class="artwork-visuals">
+        <div id="artwork-output-area" class="artwork-outputs">
+          <figure>
+            <figcaption id="artwork-output-label">Output preview</figcaption>
+            <div class="artwork-image"><canvas id="artwork-output"></canvas></div>
+          </figure>
+          <figure id="artwork-home" hidden>
+            <figcaption>Home bubble</figcaption>
+            <div class="artwork-image artwork-bubble"><canvas id="artwork-bubble"></canvas></div>
+          </figure>
+        </div>
+        <section class="artwork-source-section" aria-label="Source and crop">
+          <p id="artwork-instructions">Drag the crop area to move it or drag its bottom-right corner to resize.</p>
+          <div id="artwork-source-wrap">
+            <canvas id="artwork-source" aria-label="Source image"></canvas>
+            <div id="crop-selection" aria-hidden="true"><span id="crop-handle"></span></div>
+          </div>
+          <p id="artwork-empty" hidden>Upload a PNG or JPG to crop it, or enable Solid color.</p>
+        </section>
+      </div>
+      <div class="artwork-controls">
+        <fieldset id="artwork-image-controls">
+          <legend>Image adjustments</legend>
+          <div id="artwork-adjustments"></div>
+          <button class="action-secondary" id="artwork-center" type="button">Center crop to output ratio</button>
+        </fieldset>
+        <fieldset>
+          <legend>Solid fill</legend>
+          <div class="artwork-fill-switch">
+            <label class="editor-check"><input id="artwork-solid" type="checkbox"> <span>Solid color</span></label>
+            <label class="artwork-picker-label">RGB <input id="artwork-color" type="color" value="#000000"></label>
+          </div>
+          <div id="artwork-rgb"></div>
+        </fieldset>
+      </div>
+    </div>
+    <footer class="dialog-footer">
+      <div class="artwork-upload">
+        <button class="action-secondary" type="button" id="artwork-upload">Upload PNG / JPG</button>
+        <input type="file" id="artwork-file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" hidden>
+        <span id="artwork-message" role="status"></span>
+      </div>
+      <button class="action-secondary" id="artwork-reset" type="button">Reset</button>
+      <button class="action-primary" id="artwork-apply" type="button">Apply</button>
+    </footer>
+  </dialog>
+
+  <dialog class="editor-dialog" id="presentation-dialog" aria-labelledby="presentation-title">
+    <header class="dialog-header">
+      <div><h2 id="presentation-title">LiveArea View</h2><p>PS Vita screen · 960 × 544 px</p></div>
+      <form method="dialog"><button class="action-secondary" type="submit">Close</button></form>
+    </header>
+    <canvas id="presentation-canvas" width="960" height="544" aria-label="PS Vita composition preview"></canvas>
+    <footer class="dialog-footer">
+      <div role="group" aria-label="Preview type" class="presentation-actions">
+        <button class="action-secondary" type="button" id="presentation-livearea" aria-pressed="true">LiveArea</button>
+        <button class="action-secondary" type="button" id="presentation-bubble" aria-pressed="false">Home Bubble</button>
+        <button class="action-secondary" type="button" id="presentation-edit-icon" hidden>Edit icon</button>
+      </div>
+      <button class="action-primary" id="presentation-export" type="button">Export screenshot (.png)</button>
+    </footer>
+  </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 </body>

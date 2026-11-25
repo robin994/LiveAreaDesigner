@@ -1,4 +1,5 @@
 #include "assets.h"
+#include "artwork.h"
 #include "exporter.h"
 #include "font.h"
 #include "template_preview.h"
@@ -8,7 +9,6 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <stdbool.h>
-#include <psp2/io/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,9 +24,8 @@
 #define BROWSER_ROWS 10
 #define BROWSER_Y 135
 #define BROWSER_STEP 33
-#define MAX_IMAGE_BYTES (12 * 1024 * 1024)
 
-typedef enum { SCREEN_EDITOR, SCREEN_SETTINGS, SCREEN_BROWSER } Screen;
+typedef enum { SCREEN_EDITOR, SCREEN_SETTINGS, SCREEN_BROWSER, SCREEN_ARTWORK, SCREEN_LIVEAREA } Screen;
 
 typedef struct { int x, y, w, h; } Rect;
 
@@ -38,10 +37,18 @@ typedef struct {
     SDL_Texture *button_texture;
     SDL_Texture *frame_previews[LAD_MAX_FRAMES];
     SDL_Texture *gate_texture;
+    SDL_Texture *icon_texture;
+    int artwork_target, artwork_row;
+    LadArtwork artwork_draft;
+    SDL_Surface *artwork_source;
+    SDL_Texture *artwork_original, *artwork_result, *artwork_bubble;
+    Rect artwork_source_bounds, artwork_result_bounds;
+    bool artwork_preview_dirty, artwork_drag_crop;
     Font font;
     DesignerConfig cfg;
     FileBrowser browser;
     Screen screen;
+    Screen preview_return;
     int setting_row;
     int settings_tab;
     int browse_target;
@@ -83,7 +90,7 @@ static const SDL_Color GOLD = {255, 222, 79, 255};
 static int clampi(int v, int lo, int hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
-static bool load_texture(App *a, const char *path, SDL_Texture **out);
+static bool reload_artwork(App *a, int target);
 static void reload_frame_previews(App *a);
 static int roundi(float x) { return (int)(x + (x >= 0.0f ? 0.5f : -0.5f)); }
 static void constrain_size(App *a, Rect origin, int dw, int dh) {
@@ -133,7 +140,9 @@ static void action_button(App *a, Rect bounds, const char *txt, bool active) {
                               (SDL_Color){34, 46, 72, 255};
     box(a->renderer, bounds, back, 255);
     outline(a->renderer, bounds, active ? GOLD : MUTED);
-    label(a, bounds.x + 11, bounds.y + 7, txt, 2, TEXT, 0);
+    const int scale = (int)strlen(txt) * 12 + 16 > bounds.w ? 1 : 2;
+    label(a, bounds.x + (bounds.w - (int)strlen(txt) * 6 * scale) / 2,
+          bounds.y + (bounds.h - 7 * scale) / 2, txt, scale, TEXT, 0);
 }
 static void set_status(App *a, const char *message) {
     snprintf(a->message, sizeof(a->message), "%s", message);
@@ -171,7 +180,7 @@ static void select_frame(App *a, int style, int id) {
     designer_load_active_frame(&a->cfg, style, id, &fallback);
     a->cfg.x = clampi(a->cfg.x, 0, CARD_W - a->cfg.w);
     a->cfg.y = clampi(a->cfg.y, SAFE_TOP, CARD_H - a->cfg.h);
-    load_texture(a, a->cfg.button_image, &a->button_texture);
+    reload_artwork(a, LAD_ART_FRAME);
     reload_frame_previews(a);
     a->dirty = true;
 }
@@ -215,126 +224,126 @@ static void settings_close(App *a) {
     save(a);
     a->screen = SCREEN_EDITOR;
 }
-static bool load_texture_limited(App *a, const char *path,
-                                 SDL_Texture **out, int max_w, int max_h) {
-    if (!*path) {
-        SDL_DestroyTexture(*out);
-        *out = NULL;
-        return true;
+static char *artwork_path(App *a, int target) {
+    switch (target) {
+    case LAD_ART_CARD: return a->cfg.card_image;
+    case LAD_ART_FRAME: return a->cfg.button_image;
+    case LAD_ART_GATE: return a->cfg.gate_image;
+    case LAD_ART_ICON: return a->cfg.icon_image;
+    default: return a->cfg.boot_image;
     }
-    SceIoStat stat;
-    if (!lad_is_image(path) || sceIoGetstat(path, &stat) < 0 ||
-        stat.st_size > MAX_IMAGE_BYTES || stat.st_size <= 0) {
-        set_status(a, "IMAGE UNAVAILABLE OR OVER 12MB");
-        return false;
+}
+static SDL_Texture **artwork_texture(App *a, int target) {
+    switch (target) {
+    case LAD_ART_CARD: return &a->card_texture;
+    case LAD_ART_FRAME: return &a->button_texture;
+    case LAD_ART_GATE: return &a->gate_texture;
+    case LAD_ART_ICON: return &a->icon_texture;
+    default: return NULL;
     }
-    SDL_Surface *surface = IMG_Load(path);
-    if (!surface) {
-        set_status(a, "FAILED TO DECODE PNG OR JPG");
-        return false;
+}
+static Rect artwork_dimensions(const App *a, int target) {
+    switch (target) {
+    case LAD_ART_CARD: return (Rect){0, 0, CARD_W, CARD_H};
+    case LAD_ART_FRAME: return (Rect){0, 0, a->cfg.w, a->cfg.h};
+    case LAD_ART_GATE: return (Rect){0, 0, 280, 158};
+    case LAD_ART_ICON: return (Rect){0, 0, 128, 128};
+    default: return (Rect){0, 0, SW, SH};
     }
-    if (surface->w > 2048 || surface->h > 2048 ||
-        surface->w <= 0 || surface->h <= 0 ||
-        (long long)surface->w * surface->h > 2048LL * 2048LL) {
-        SDL_FreeSurface(surface);
-        set_status(a, "IMAGE MUST BE 2048PX OR SMALLER");
-        return false;
-    }
-    /* Keep decoded previews close to their onscreen size. A 2048x2048 PNG
-       otherwise consumes ~16MB VRAM for every single frame. */
-    if (surface->w > max_w || surface->h > max_h) {
-        const float scale_x = (float)max_w / surface->w;
-        const float scale_y = (float)max_h / surface->h;
-        const float factor = scale_x < scale_y ? scale_x : scale_y;
-        const int w = clampi(roundi(surface->w * factor), 1, max_w);
-        const int h = clampi(roundi(surface->h * factor), 1, max_h);
-        SDL_Surface *scaled = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32,
-                                                              SDL_PIXELFORMAT_RGBA32);
-        if (!scaled || SDL_BlitScaled(surface, NULL, scaled, NULL) < 0) {
-            SDL_FreeSurface(scaled);
-            SDL_FreeSurface(surface);
-            set_status(a, "FRAME IMAGE RESIZE FAILED");
-            return false;
-        }
-        SDL_FreeSurface(surface);
-        surface = scaled;
-    }
+}
+static Rect fit_rect(Rect bounds, int width, int height) {
+    const float sx = (float)bounds.w / width, sy = (float)bounds.h / height;
+    const float scale = sx < sy ? sx : sy;
+    const int w = clampi(roundi(width * scale), 1, bounds.w);
+    const int h = clampi(roundi(height * scale), 1, bounds.h);
+    return (Rect){bounds.x + (bounds.w - w) / 2, bounds.y + (bounds.h - h) / 2, w, h};
+}
+static bool replace_preview(App *a, SDL_Texture **out, SDL_Surface *source,
+                            const LadArtwork *art, Rect size, bool bubble,
+                            SDL_Color fill, bool alpha) {
+    SDL_Surface *surface = lad_artwork_render(source, art, size.w, size.h, fill, alpha);
+    if (!surface) return false;
+    if (bubble) lad_artwork_mask_bubble(surface);
     SDL_Texture *texture = SDL_CreateTextureFromSurface(a->renderer, surface);
     SDL_FreeSurface(surface);
-    if (!texture) {
-        set_status(a, "INSUFFICIENT VIDEO MEMORY FOR IMAGE");
-        return false;
-    }
+    if (!texture) return false;
     SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
     SDL_DestroyTexture(*out);
     *out = texture;
     return true;
 }
-static bool load_texture(App *a, const char *path, SDL_Texture **out) {
-    return load_texture_limited(a, path, out, 960, 544);
+static bool reload_artwork(App *a, int target) {
+    SDL_Texture **out = artwork_texture(a, target);
+    if (!out) return true;
+    SDL_DestroyTexture(*out);
+    *out = NULL;
+    const char *path = artwork_path(a, target);
+    const LadArtwork *art = &a->cfg.artwork[target];
+    if (!*path && !art->solid) return true;
+    SDL_Surface *source = art->solid ? NULL : lad_artwork_load(path);
+    const bool bubble = target == LAD_ART_ICON;
+    const bool ok = (source || art->solid) &&
+        replace_preview(a, out, source, art, artwork_dimensions(a, target),
+                        bubble, palette[8], !bubble);
+    SDL_FreeSurface(source);
+    if (!ok) set_status(a, "IMAGE UNAVAILABLE OR OVER 2048PX / 12MB");
+    return ok;
 }
 static void reload_frame_previews(App *a) {
     for (int i = 0; i < LAD_MAX_FRAMES; ++i) {
         SDL_DestroyTexture(a->frame_previews[i]);
         a->frame_previews[i] = NULL;
     }
-    if (!a->cfg.preview_template) return;
+    if (!a->cfg.preview_template && a->screen != SCREEN_LIVEAREA) return;
     const int count = lad_template_frame_count(a->cfg.template_style);
     for (int id = 1; id <= count; ++id) {
         if (id == a->cfg.frame_id) continue;
         DesignerFrame item;
         lad_resolve_frame(&a->cfg, id, &item);
-        if (item.image[0])
-            load_texture_limited(a, item.image, &a->frame_previews[id - 1],
-                clampi(item.w, 1, 840), clampi(item.h, 1, 500));
+        if (!item.image[0] && !item.artwork.solid) continue;
+        SDL_Surface *source = item.artwork.solid ? NULL : lad_artwork_load(item.image);
+        const Rect size = {0, 0, clampi(item.w, 1, CARD_W), clampi(item.h, 1, CARD_H)};
+        if (source || item.artwork.solid)
+            replace_preview(a, &a->frame_previews[id - 1], source, &item.artwork,
+                            size, false, palette[8], true);
+        SDL_FreeSurface(source);
     }
 }
 static void choose_image(App *a, const char *path) {
-    char *chosen;
-    SDL_Texture **tex;
-    SDL_Texture *temp = NULL;
-    switch (a->browse_target) {
-    case 0: chosen = a->cfg.card_image; tex = &a->card_texture; break;
-    case 1: chosen = a->cfg.button_image; tex = &a->button_texture; break;
-    case 2: chosen = a->cfg.gate_image; tex = &a->gate_texture; break;
-    case 3: chosen = a->cfg.icon_image; tex = &temp; break;
-    default: chosen = a->cfg.boot_image; tex = &temp; break;
+    const int target = a->browse_target;
+    SDL_Surface *source = lad_artwork_load(path);
+    if (!source) {
+        set_status(a, "IMAGE UNAVAILABLE OR OVER 2048PX / 12MB");
+        return;
     }
-    if (!load_texture(a, path, tex)) return;
-    if (temp) SDL_DestroyTexture(temp);
-    if (a->browse_target == 1) {
-        SDL_Surface *source = IMG_Load(path);
-        if (source) {
-            a->cfg.aspect_width = source->w;
-            a->cfg.aspect_height = source->h;
-            if (a->cfg.aspect_lock) {
-                Rect rect = {a->cfg.x, a->cfg.y, a->cfg.w, a->cfg.h};
-                constrain_size(a, rect, 0, roundi(rect.w *
-                                               (float)source->h / source->w) - rect.h);
-            }
-            SDL_FreeSurface(source);
+    SDL_Texture **texture = artwork_texture(a, target);
+    const bool bubble = target == LAD_ART_ICON;
+    if (texture && !replace_preview(a, texture, source, &(LadArtwork){0},
+                                    artwork_dimensions(a, target), bubble, palette[8], !bubble)) {
+        SDL_FreeSurface(source);
+        set_status(a, "COULD NOT UPDATE IMAGE PREVIEW");
+        return;
+    }
+    if (target == LAD_ART_FRAME) {
+        a->cfg.aspect_width = source->w;
+        a->cfg.aspect_height = source->h;
+        if (a->cfg.aspect_lock) {
+            Rect rect = {a->cfg.x, a->cfg.y, a->cfg.w, a->cfg.h};
+            constrain_size(a, rect, 0, roundi(rect.w *
+                                           (float)source->h / source->w) - rect.h);
         }
     }
-    snprintf(chosen, LAD_PATH_MAX, "%s", path);
+    SDL_FreeSurface(source);
+    snprintf(artwork_path(a, target), LAD_PATH_MAX, "%s", path);
+    a->cfg.artwork[target] = (LadArtwork){0};
     a->dirty = true;
     a->screen = SCREEN_SETTINGS;
     set_status(a, "IMAGE LOADED");
 }
 static void clear_image(App *a, int target) {
-    if (target == 0) {
-        a->cfg.card_image[0] = '\0';
-        load_texture(a, "", &a->card_texture);
-    } else if (target == 1) {
-        a->cfg.button_image[0] = '\0';
-        load_texture(a, "", &a->button_texture);
-    } else if (target == 2) {
-        a->cfg.gate_image[0] = '\0';
-        load_texture(a, "", &a->gate_texture);
-    } else if (target == 3) {
-        a->cfg.icon_image[0] = '\0';
-    } else {
-        a->cfg.boot_image[0] = '\0';
-    }
+    artwork_path(a, target)[0] = '\0';
+    a->cfg.artwork[target] = (LadArtwork){0};
+    reload_artwork(a, target);
     a->dirty = true;
     set_status(a, "IMAGE CLEARED");
 }
@@ -367,9 +376,7 @@ static void browser_select(App *a) {
     a->cfg.invert_y = invert_y;
     snprintf(a->vpk_source, sizeof(a->vpk_source), "%s", picked);
     normalize(a);
-    load_texture(a, a->cfg.card_image, &a->card_texture);
-    load_texture(a, a->cfg.button_image, &a->button_texture);
-    load_texture(a, a->cfg.gate_image, &a->gate_texture);
+    for (int target = 0; target < LAD_ART_COUNT; ++target) reload_artwork(a, target);
     reload_frame_previews(a);
     a->settings_tab = 1;
     a->screen = SCREEN_SETTINGS;
@@ -490,6 +497,12 @@ static void settings_adjust(App *a, int delta) {
     }
     a->dirty = true;
 }
+static void open_livearea_preview(App *a) {
+    a->preview_return = a->screen;
+    a->screen = SCREEN_LIVEAREA;
+    a->drag = false;
+    if (!a->cfg.preview_template) reload_frame_previews(a);
+}
 static void settings_confirm(App *a) {
     if (!a->settings_tab) {
         if (a->setting_row == 0 || a->setting_row == 1)
@@ -510,6 +523,7 @@ static void settings_confirm(App *a) {
         else if (a->setting_row == 9) toggle_template_preview(a);
         else if (a->setting_row == 10) open_browser(a, 6);
         else if (a->setting_row == 11) patch_selected_vpk(a);
+        else if (a->setting_row == 14) open_livearea_preview(a);
         else if (a->setting_row == 12 || a->setting_row == 13)
             settings_adjust(a, 1);
         else {
@@ -528,24 +542,214 @@ static void settings_clear_selected(App *a) {
 static void browser_back(App *a) {
     if (!browser_parent(&a->browser)) a->screen = SCREEN_SETTINGS;
 }
+typedef struct {
+    const char *name;
+    int offset, minimum, maximum, step;
+} ArtworkControl;
+
+#define CONTROL(name, field, min, max, step) {name, offsetof(LadArtwork, field), min, max, step}
+static const ArtworkControl artwork_controls[] = {
+    CONTROL("CROP WIDTH", crop_width, 0, 95, 1),
+    CONTROL("CROP HEIGHT", crop_height, 0, 95, 1),
+    CONTROL("CROP X", crop_x, -100, 100, 2),
+    CONTROL("CROP Y", crop_y, -100, 100, 2),
+    CONTROL("HUE", hue, -180, 180, 3),
+    CONTROL("SATURATION", saturation, -100, 100, 2),
+    CONTROL("BRIGHTNESS", brightness, -100, 100, 2),
+    CONTROL("SOLID COLOR", solid, 0, 1, 1),
+    CONTROL("RED", red, 0, 255, 4),
+    CONTROL("GREEN", green, 0, 255, 4),
+    CONTROL("BLUE", blue, 0, 255, 4)
+};
+#undef CONTROL
+
+#define ARTWORK_ROWS ((int)(sizeof(artwork_controls) / sizeof(artwork_controls[0])))
+#define ARTWORK_ROW_Y 77
+#define ARTWORK_ROW_H 35
+#define ARTWORK_SLIDER_X 700
+#define ARTWORK_SLIDER_W 166
+
+static const Rect artwork_apply_button = {786, 478, 138, 38};
+static const Rect artwork_reset_button = {640, 478, 135, 38};
+static const Rect artwork_cancel_button = {494, 478, 135, 38};
+static const Rect artwork_fit_button = {32, 478, 188, 38};
+static const Rect livearea_shortcut = {551, 2, 120, 30};
+static const Rect settings_livearea = {524, 108, 174, 31};
+static const Rect icon_shortcut = {678, 2, 122, 30};
+
+static int *artwork_value(App *a, int row) {
+    return (int *)((char *)&a->artwork_draft + artwork_controls[row].offset);
+}
+static int selected_artwork(const App *a) {
+    if (a->settings_tab && a->setting_row < 3) return a->setting_row + LAD_ART_GATE;
+    if (!a->settings_tab && a->setting_row < 2) return a->setting_row;
+    return -1;
+}
+static bool artwork_control_enabled(const App *a, int row) {
+    if (row < 7) return a->artwork_source && !a->artwork_draft.solid;
+    return row == 7 || a->artwork_draft.solid;
+}
+static void close_artwork(App *a) {
+    SDL_FreeSurface(a->artwork_source);
+    SDL_DestroyTexture(a->artwork_original);
+    SDL_DestroyTexture(a->artwork_result);
+    SDL_DestroyTexture(a->artwork_bubble);
+    a->artwork_source = NULL;
+    a->artwork_original = a->artwork_result = a->artwork_bubble = NULL;
+    a->drag = false;
+    a->screen = SCREEN_SETTINGS;
+}
+static void open_artwork(App *a, int target) {
+    if (target < 0) return;
+    a->artwork_target = target;
+    a->drag = a->artwork_drag_crop = false;
+    a->settings_tab = target >= LAD_ART_GATE;
+    a->setting_row = a->settings_tab ? target - LAD_ART_GATE : target;
+    a->artwork_draft = a->cfg.artwork[target];
+    lad_artwork_normalize(&a->artwork_draft);
+    const char *path = artwork_path(a, target);
+    if (*path) a->artwork_source = lad_artwork_load(path);
+    if (a->artwork_source) {
+        a->artwork_source_bounds = fit_rect((Rect){34, 340, 410, 130},
+            a->artwork_source->w, a->artwork_source->h);
+        replace_preview(a, &a->artwork_original, a->artwork_source, &(LadArtwork){0},
+                        a->artwork_source_bounds, false, palette[8], true);
+    }
+    a->artwork_row = artwork_control_enabled(a, 0) ? 0 : 7;
+    a->artwork_preview_dirty = true;
+    a->message_until = SDL_GetTicks();
+    a->screen = SCREEN_ARTWORK;
+}
+static void confirm_artwork(App *a) {
+    const int target = a->artwork_target;
+    const LadArtwork *art = &a->artwork_draft;
+    const bool has_image = *artwork_path(a, target) != '\0';
+    if ((art->solid || has_image) && artwork_texture(a, target)) {
+        const bool bubble = target == LAD_ART_ICON;
+        if ((!art->solid && !a->artwork_source) ||
+            !replace_preview(a, artwork_texture(a, target), a->artwork_source,
+                             art, artwork_dimensions(a, target), bubble, palette[8], !bubble)) {
+            set_status(a, "COULD NOT UPDATE IMAGE PREVIEW");
+            return;
+        }
+    }
+    a->cfg.artwork[target] = *art;
+    a->dirty = true;
+    close_artwork(a);
+    set_status(a, "ARTWORK UPDATED");
+}
+static void fit_artwork_crop(App *a) {
+    if (!artwork_control_enabled(a, 0)) return;
+    const Rect output = artwork_dimensions(a, a->artwork_target);
+    const float keep = (float)output.w * a->artwork_source->h /
+                       ((float)output.h * a->artwork_source->w);
+    a->artwork_draft.crop_width = keep < 1.0f ? roundi(100 * (1.0f - keep)) : 0;
+    a->artwork_draft.crop_height = keep > 1.0f ? roundi(100 * (1.0f - 1.0f / keep)) : 0;
+    a->artwork_draft.crop_x = a->artwork_draft.crop_y = 0;
+    lad_artwork_normalize(&a->artwork_draft);
+    a->artwork_preview_dirty = true;
+}
+static void reset_artwork(App *a) {
+    a->artwork_draft = (LadArtwork){0};
+    if (!artwork_control_enabled(a, a->artwork_row)) a->artwork_row = 7;
+    a->artwork_preview_dirty = true;
+}
+static void change_artwork(App *a, int value) {
+    const int row = a->artwork_row;
+    if (!artwork_control_enabled(a, row)) return;
+    const ArtworkControl *control = &artwork_controls[row];
+    int *current = artwork_value(a, row);
+    value = clampi(value, control->minimum, control->maximum);
+    if (*current == value) return;
+    *current = value;
+    a->artwork_preview_dirty = true;
+}
+static void touch_artwork_slider(App *a, int x) {
+    const ArtworkControl *control = &artwork_controls[a->artwork_row];
+    const int distance = clampi(x - ARTWORK_SLIDER_X, 0, ARTWORK_SLIDER_W);
+    change_artwork(a, control->minimum +
+                   (distance * (control->maximum - control->minimum) + ARTWORK_SLIDER_W / 2) /
+                   ARTWORK_SLIDER_W);
+}
+static int move_crop_axis(int original, int delta, int source, int visible, int preview) {
+    if (source == visible) return original;
+    return clampi(original + roundi((float)delta * 200 * source /
+                                    (preview * (source - visible))), -100, 100);
+}
+static void drag_artwork_crop(App *a, int x, int y) {
+    LadArtwork *art = &a->artwork_draft;
+    const SDL_Surface *source = a->artwork_source;
+    const SDL_Rect crop = lad_artwork_crop(source, art);
+    const Rect preview = a->artwork_source_bounds;
+    art->crop_x = move_crop_axis(a->start_button.x, x - a->grab_x, source->w, crop.w, preview.w);
+    art->crop_y = move_crop_axis(a->start_button.y, y - a->grab_y, source->h, crop.h, preview.h);
+    a->artwork_preview_dirty = true;
+}
+static bool artwork_edit_hit(int x, int y, int top) {
+    return hit(x, y, (Rect){225, top, 55, 35});
+}
+
 static void navigate(App *a, int dx, int dy, int step) {
-    if (a->screen == SCREEN_EDITOR) {
+    if (a->screen == SCREEN_ARTWORK) {
+        if (dy) {
+            for (int row = a->artwork_row + dy; row >= 0 && row < ARTWORK_ROWS; row += dy) {
+                if (artwork_control_enabled(a, row)) {
+                    a->artwork_row = row;
+                    break;
+                }
+            }
+        } else if (dx) {
+            change_artwork(a, *artwork_value(a, a->artwork_row) +
+                           dx * artwork_controls[a->artwork_row].step * step);
+        }
+    } else if (a->screen == SCREEN_EDITOR) {
         editor_adjust(a, dx, dy, step);
     } else if (a->screen == SCREEN_SETTINGS) {
-        if (dy) a->setting_row = clampi(a->setting_row + dy, 0, a->settings_tab ? 13 : 4);
+        if (dy) a->setting_row = clampi(a->setting_row + dy, 0, a->settings_tab ? 14 : 4);
         else if (dx) settings_adjust(a, dx);
-    } else if (dy) {
+    } else if (a->screen == SCREEN_BROWSER && dy) {
         a->browser.selected = clampi(a->browser.selected + dy, 0,
                                      a->browser.count ? a->browser.count - 1 : 0);
         browser_scroll(&a->browser);
     }
 }
 static void pointer_down(App *a, int x, int y) {
+    if (a->screen == SCREEN_LIVEAREA) {
+        if (y >= 522) a->screen = a->preview_return;
+        return;
+    }
+    if (a->screen == SCREEN_ARTWORK) {
+        if (hit(x, y, artwork_apply_button)) confirm_artwork(a);
+        else if (hit(x, y, artwork_reset_button)) reset_artwork(a);
+        else if (hit(x, y, artwork_cancel_button)) close_artwork(a);
+        else if (hit(x, y, artwork_fit_button)) fit_artwork_crop(a);
+        else if (artwork_control_enabled(a, 0) && hit(x, y, a->artwork_source_bounds)) {
+            a->drag = a->artwork_drag_crop = true;
+            a->grab_x = x;
+            a->grab_y = y;
+            a->start_button.x = a->artwork_draft.crop_x;
+            a->start_button.y = a->artwork_draft.crop_y;
+        } else if (hit(x, y, (Rect){492, ARTWORK_ROW_Y, 432, ARTWORK_ROWS * ARTWORK_ROW_H})) {
+            const int row = (y - ARTWORK_ROW_Y) / ARTWORK_ROW_H;
+            if (!artwork_control_enabled(a, row)) return;
+            a->artwork_row = row;
+            if (row == 7) change_artwork(a, !a->artwork_draft.solid);
+            else if (x >= ARTWORK_SLIDER_X - 12) {
+                a->drag = true;
+                a->artwork_drag_crop = false;
+                touch_artwork_slider(a, x);
+            }
+        }
+        return;
+    }
     if (a->screen == SCREEN_SETTINGS) {
         if (hit(x, y, (Rect){580, 56, 350, 45})) {
             a->settings_tab = !a->settings_tab; a->setting_row = 0; return;
         }
         if (a->settings_tab) {
+            if (hit(x, y, settings_livearea)) {
+                a->setting_row = 14; open_livearea_preview(a); return;
+            }
             if (!lad_template_layout(a->cfg.template_style)->has_gate &&
                 hit(x, y, (Rect){284, 106, 110, 35})) {
                 set_status(a, "THIS LAYOUT HAS NO STARTUP GATE");
@@ -589,6 +793,10 @@ static void pointer_down(App *a, int x, int y) {
             }
             static const int centers[] = {106, 185, 264};
             for (int i = 0; i < 3; i++) {
+                if (artwork_edit_hit(x, y, centers[i]) ||
+                    (i == 1 && hit(x, y, (Rect){58, 207, 40, 40}))) {
+                    open_artwork(a, i + LAD_ART_GATE); return;
+                }
                 if (hit(x, y, (Rect){284, centers[i], 110, 35})) {
                     a->setting_row = i; open_browser(a, i + 2); return;
                 }
@@ -605,7 +813,11 @@ static void pointer_down(App *a, int x, int y) {
             settings_confirm(a);
             return;
         }
-        if (hit(x, y, (Rect){284, 106, 110, 35})) {
+        if (artwork_edit_hit(x, y, 106)) {
+            open_artwork(a, LAD_ART_CARD);
+        } else if (artwork_edit_hit(x, y, 186)) {
+            open_artwork(a, LAD_ART_FRAME);
+        } else if (hit(x, y, (Rect){284, 106, 110, 35})) {
             a->setting_row = 0; open_browser(a, 0);
         } else if (hit(x, y, (Rect){397, 106, 76, 35})) {
             a->setting_row = 0; clear_image(a, 0);
@@ -640,6 +852,14 @@ static void pointer_down(App *a, int x, int y) {
         return;
     }
 
+    if (hit(x, y, livearea_shortcut)) {
+        open_livearea_preview(a);
+        return;
+    }
+    if (hit(x, y, icon_shortcut)) {
+        open_artwork(a, LAD_ART_ICON);
+        return;
+    }
     if (hit(x, y, (Rect){752, 512, 203, 32})) {
         toggle_template_preview(a);
         return;
@@ -680,6 +900,14 @@ static void pointer_down(App *a, int x, int y) {
     a->start_button = (Rect){a->cfg.x, a->cfg.y, a->cfg.w, a->cfg.h};
 }
 static void pointer_move(App *a, int x, int y) {
+    if (a->screen == SCREEN_ARTWORK && a->drag) {
+        if (a->artwork_drag_crop) {
+            if (artwork_control_enabled(a, 0)) drag_artwork_crop(a, x, y);
+        } else {
+            touch_artwork_slider(a, x);
+        }
+        return;
+    }
     if (a->screen != SCREEN_EDITOR || !a->drag) return;
     int dx = x - a->grab_x, dy = y - a->grab_y;
     Rect b = a->start_button;
@@ -704,6 +932,23 @@ static void pointer_move(App *a, int x, int y) {
     a->dirty = true;
 }
 static void press(App *a, int button) {
+    if (a->screen == SCREEN_LIVEAREA) {
+        if (button == SDL_CONTROLLER_BUTTON_B || button == SDL_CONTROLLER_BUTTON_BACK ||
+            button == SDL_CONTROLLER_BUTTON_START)
+            a->screen = a->preview_return;
+        return;
+    }
+    if (a->screen == SCREEN_ARTWORK) {
+        switch (button) {
+        case SDL_CONTROLLER_BUTTON_A:
+        case SDL_CONTROLLER_BUTTON_START: confirm_artwork(a); break;
+        case SDL_CONTROLLER_BUTTON_B: close_artwork(a); break;
+        case SDL_CONTROLLER_BUTTON_X: reset_artwork(a); break;
+        case SDL_CONTROLLER_BUTTON_Y: fit_artwork_crop(a); break;
+        default: break;
+        }
+        return;
+    }
     switch (button) {
     case SDL_CONTROLLER_BUTTON_START:
         if (a->screen == SCREEN_SETTINGS) settings_close(a);
@@ -729,7 +974,8 @@ static void press(App *a, int button) {
             cycle_template_style(a);
         break;
     case SDL_CONTROLLER_BUTTON_Y: /* Triangle */
-        if (a->screen == SCREEN_EDITOR) a->resize_mode = !a->resize_mode;
+        if (a->screen == SCREEN_SETTINGS) open_artwork(a, selected_artwork(a));
+        else if (a->screen == SCREEN_EDITOR) a->resize_mode = !a->resize_mode;
         else if (a->screen == SCREEN_BROWSER) a->screen = SCREEN_SETTINGS;
         break;
     case SDL_CONTROLLER_BUTTON_BACK: /* SELECT on PS Vita */
@@ -756,14 +1002,20 @@ static void press(App *a, int button) {
 static void key(App *a, SDL_Keycode code) {
     if (code == SDLK_ESCAPE) {
         press(a, SDL_CONTROLLER_BUTTON_B);
+    } else if (code == SDLK_e && a->screen == SCREEN_SETTINGS) {
+        open_artwork(a, selected_artwork(a));
     } else if (code == SDLK_TAB) {
-        if (a->screen == SCREEN_EDITOR) a->resize_mode = !a->resize_mode;
+        if (a->screen == SCREEN_ARTWORK) fit_artwork_crop(a);
+        else if (a->screen == SCREEN_EDITOR) a->resize_mode = !a->resize_mode;
         else if (a->screen == SCREEN_SETTINGS) {
             a->settings_tab = !a->settings_tab; a->setting_row = 0;
         }
     } else if (code == SDLK_F1 || code == SDLK_s) {
         press(a, SDL_CONTROLLER_BUTTON_START);
-    } else if (code == SDLK_p) {
+    } else if (code == SDLK_SPACE) {
+        if (a->screen == SCREEN_LIVEAREA) a->screen = a->preview_return;
+        else if (a->screen == SCREEN_EDITOR) open_livearea_preview(a);
+    } else if (code == SDLK_p && (a->screen == SCREEN_EDITOR || a->screen == SCREEN_SETTINGS)) {
         toggle_template_preview(a);
     } else if (code == SDLK_t && a->screen == SCREEN_EDITOR && a->cfg.preview_template) {
         cycle_template_style(a);
@@ -804,19 +1056,44 @@ static bool image_fits_selected_frame(const App *a) {
            a->cfg.x + a->cfg.w <= frame.x + frame.w &&
            a->cfg.y + a->cfg.h <= frame.y + frame.h;
 }
-static void draw_template_chrome(App *a, Rect card) {
+static void draw_template_gate(App *a, Rect card) {
     SDL_Renderer *r = a->renderer;
-    const int mini = card.w < CARD_W;
+    const bool mini = card.w < CARD_W;
     const int scale = mini ? 1 : 2;
-    const int protected_h = SAFE_TOP * card.h / CARD_H;
     const LadPreviewGate placement = lad_preview_gate(a->cfg.template_style);
-    const LadTemplateLayout *layout = lad_template_layout(a->cfg.template_style);
     Rect gate = {
         card.x + placement.x * card.w / CARD_W,
         card.y + placement.y * card.h / CARD_H,
         placement.w * card.w / CARD_W,
         placement.h * card.h / CARD_H
     };
+    if (placement.known_alignment) {
+        box(r, (Rect){gate.x - 3, gate.y - 3, gate.w + 6, gate.h + (mini ? 19 : 33)},
+            (SDL_Color){20, 31, 52, 255}, 224);
+        if (a->gate_texture) {
+            draw_image(r, a->gate_texture, gate);
+        } else if (a->screen != SCREEN_LIVEAREA) {
+            box(r, gate, (SDL_Color){76, 82, 125, 255}, 255);
+            label(a, gate.x + (mini ? 5 : 35), gate.y + gate.h / 2 - 5,
+                  "STARTUP", scale, TEXT, 0);
+        }
+        if (a->screen != SCREEN_LIVEAREA) outline(r, gate, TEXT);
+        Rect start = {
+            gate.x + (mini ? 16 : 54), gate.y + gate.h + (mini ? 2 : 5),
+            gate.w - (mini ? 32 : 108), mini ? 13 : 21
+        };
+        box(r, start, (SDL_Color){58, 158, 231, 255}, 255);
+        label(a, start.x + (mini ? 6 : 24), start.y + (mini ? 3 : 5),
+              "START", mini ? 1 : 2, TEXT, 0);
+    }
+
+}
+static void draw_template_chrome(App *a, Rect card) {
+    SDL_Renderer *r = a->renderer;
+    const int mini = card.w < CARD_W;
+    const int scale = mini ? 1 : 2;
+    const int protected_h = SAFE_TOP * card.h / CARD_H;
+    const LadTemplateLayout *layout = lad_template_layout(a->cfg.template_style);
     box(r, (Rect){card.x + 1, card.y + 1, card.w - 2, protected_h - 1},
         (SDL_Color){18, 29, 51, 255}, 235);
     label(a, card.x + 9, card.y + (mini ? 4 : 14),
@@ -870,25 +1147,6 @@ static void draw_template_chrome(App *a, Rect card) {
         }
     }
 
-    if (placement.known_alignment) {
-        box(r, (Rect){gate.x - 3, gate.y - 3, gate.w + 6, gate.h + (mini ? 19 : 33)},
-            (SDL_Color){20, 31, 52, 255}, 224);
-        if (a->gate_texture) {
-            draw_image(r, a->gate_texture, gate);
-        } else {
-            box(r, gate, (SDL_Color){76, 82, 125, 255}, 255);
-            label(a, gate.x + (mini ? 5 : 35), gate.y + gate.h / 2 - 5,
-                  "STARTUP", scale, TEXT, 0);
-        }
-        outline(r, gate, TEXT);
-        Rect start = {
-            gate.x + (mini ? 16 : 54), gate.y + gate.h + (mini ? 2 : 5),
-            gate.w - (mini ? 32 : 108), mini ? 13 : 21
-        };
-        box(r, start, (SDL_Color){58, 158, 231, 255}, 255);
-        label(a, start.x + (mini ? 6 : 24), start.y + (mini ? 3 : 5),
-              "START", mini ? 1 : 2, TEXT, 0);
-    }
 
     char style[80];
     snprintf(style, sizeof(style), "%s  FRAME%d/%d",
@@ -901,18 +1159,20 @@ static void draw_template_chrome(App *a, Rect card) {
           style, scale, TEXT, 31);
 }
 static void draw_card(App *a, Rect card, bool guides) {
+    const bool clean = a->screen == SCREEN_LIVEAREA;
     SDL_Renderer *r = a->renderer;
     box(r, card, palette[a->cfg.card_color], 255);
     draw_image(r, a->card_texture, card);
     outline(r, card, (SDL_Color){224, 185, 236, 255});
-    if (a->cfg.preview_template) {
-        draw_template_chrome(a, card);
+    if (a->cfg.preview_template || clean) {
+        if (!clean) draw_template_chrome(a, card);
         const LadTemplateLayout *layout = lad_template_layout(a->cfg.template_style);
         const int mini = card.w < CARD_W;
         for (int index = 0; index < layout->frame_count; ++index) {
             const LadTemplateSlot *slot = &layout->frames[index];
             DesignerFrame item;
             lad_resolve_frame(&a->cfg, index + 1, &item);
+            if (clean && !lad_include_frame(&a->cfg, &item)) continue;
             Rect slot_bounds = template_slot_rect(card, slot);
             if (slot->width <= 0 || slot->height <= 0) continue;
             const Rect content = {
@@ -929,10 +1189,10 @@ static void draw_card(App *a, Rect card, bool guides) {
             if (!item.transparent_button) {
                 const int palette_index = clampi(item.button_color, 0,
                                                   LAD_PALETTE_COUNT - 1);
-                box(r, content, palette[palette_index], texture ? 255 : 164);
+                box(r, content, palette[palette_index], texture || clean ? 255 : 164);
             }
             draw_image(r, texture, content);
-            if (!texture) {
+            if (!clean && !texture) {
                 char placeholder[48];
                 snprintf(placeholder, sizeof(placeholder), "FRAME%d PNG/JPG",
                          index + 1);
@@ -947,7 +1207,7 @@ static void draw_card(App *a, Rect card, bool guides) {
                       mini ? 22 : 55);
             }
             SDL_RenderSetClipRect(r, NULL);
-            if (index + 1 == a->cfg.frame_id) {
+            if (!clean && index + 1 == a->cfg.frame_id) {
                 outline(r, slot_bounds, GOLD);
                 outline(r, content, image_fits_selected_frame(a) ? TEXT :
                        (SDL_Color){255, 130, 120, 255});
@@ -956,7 +1216,8 @@ static void draw_card(App *a, Rect card, bool guides) {
                            content.y + content.h - 9, 18, 18}, GOLD, 255);
             }
         }
-        return; /* No global draggable button when Template Preview is ON. */
+        draw_template_gate(a, card);
+        return;
     } else if (guides) {
         int protect_h = SAFE_TOP * card.h / CARD_H;
         box(r, (Rect){card.x, card.y, card.w, protect_h},
@@ -999,6 +1260,11 @@ static void draw_editor(App *a) {
              CARD_W - a->cfg.x - a->cfg.w,
              CARD_H - a->cfg.y - a->cfg.h);
     label(a, 12, 9, pos, 2, TEXT, 65);
+    action_button(a, livearea_shortcut, "LIVEAREA", false);
+    box(r, icon_shortcut, (SDL_Color){34, 46, 72, 255}, 255);
+    outline(r, icon_shortcut, MUTED);
+    label(a, 690, 10, "ICON", 2, TEXT, 0);
+    draw_image(r, a->icon_texture, (Rect){768, 5, 24, 24});
     action_button(a, (Rect){807, 3, 148, 29}, "SETTINGS", false);
     box(r, (Rect){0, 512, SW, 32}, (SDL_Color){6, 9, 23, 255}, 250);
     label(a, 12, 520, a->resize_mode ? "MODE: RESIZE" : "MODE: MOVE", 2, GOLD, 0);
@@ -1037,16 +1303,22 @@ static void draw_settings_export(App *a) {
     };
     const char *titles[] = {"GATE STARTUP IMAGE", "BUBBLE ICON IMAGE", "BOOT SCREEN IMAGE"};
     static const int item_y[] = {106, 185, 264};
-    label(a, 52, 96, "PNG8 EXPORT - SCE_SYS / LIVEAREA / CONTENTS", 1, MUTED, 0);
+    label(a, 52, 96, "VPK ARTWORK", 1, MUTED, 0);
     for (int i = 0; i < 3; ++i) {
         if (a->setting_row == i) outline(r, (Rect){46, item_y[i] - 3, 428, 69}, GOLD);
         label(a, 57, item_y[i] + 10,
               i == 0 && !lad_template_layout(a->cfg.template_style)->has_gate ?
-                  "NO STARTUP GATE FOR THIS STYLE" : titles[i],
-              2, TEXT, 0);
+                  "NO GATE FOR THIS STYLE" : titles[i],
+              1, TEXT, 0);
+        action_button(a, (Rect){225, item_y[i], 55, 35}, "EDIT", false);
         action_button(a, (Rect){284, item_y[i], 110, 35}, "BROWSE", a->setting_row == i);
         action_button(a, (Rect){397, item_y[i], 76, 35}, "CLEAR", false);
-        label(a, 57, item_y[i] + 40, file_basename(filepaths[i]), 1, MUTED, 64);
+        const bool has_bubble = i == 1 && a->icon_texture;
+        if (has_bubble)
+            draw_image(r, a->icon_texture, (Rect){58, 207, 40, 40});
+        label(a, has_bubble ? 105 : 57, item_y[i] + 42,
+              a->cfg.artwork[i + LAD_ART_GATE].solid ? "SOLID COLOR" :
+                  file_basename(filepaths[i]), 1, MUTED, has_bubble ? 57 : 64);
     }
     snprintf(line, sizeof(line), "STYLE: %s",
              lad_preview_style_name(a->cfg.template_style));
@@ -1071,7 +1343,7 @@ static void draw_settings_export(App *a) {
     label(a, 269, 464, a->cfg.preview_template ?
           "PREVIEW TEMPLATE: ON" : "PREVIEW TEMPLATE: OFF", 1, TEXT, 0);
 
-    label(a, 524, 112, "FRAME PREVIEW", 2, TEXT, 0);
+    action_button(a, settings_livearea, "LIVEAREA VIEW", a->setting_row == 14);
     const Rect invert_x = {710, 108, 93, 31};
     const Rect invert_y = {809, 108, 93, 31};
     box(r, invert_x, a->cfg.invert_x ?
@@ -1105,7 +1377,7 @@ static void draw_settings(App *a) {
     if (a->settings_tab) {
         draw_settings_export(a);
         box(r, (Rect){0, 507, SW, 37}, (SDL_Color){5, 7, 19, 255}, 255);
-        label(a, 16, 518, "L/R:TABS  DPAD:NAV  X:SELECT  SELECT:PREVIEW  O:BACK",
+        label(a, 16, 518, "L/R:TABS  DPAD:NAV  X:SELECT  TRI:EDIT IMAGE  O:BACK",
               2, TEXT, 75);
         return;
     }
@@ -1116,6 +1388,7 @@ static void draw_settings(App *a) {
     if (a->setting_row == 1)
         outline(r, (Rect){46, 183, 428, 70}, GOLD);
     label(a, 57, 116, "CARD IMAGE", 2, TEXT, 0);
+    action_button(a, (Rect){225, 106, 55, 35}, "EDIT", false);
     action_button(a, (Rect){284, 106, 110, 35}, "BROWSE", a->setting_row == 0);
     action_button(a, (Rect){397, 106, 76, 35}, "CLEAR", false);
     label(a, 57, 148, file_basename(a->cfg.card_image), 1, MUTED, 66);
@@ -1123,6 +1396,7 @@ static void draw_settings(App *a) {
     char frame_heading[48];
     snprintf(frame_heading, sizeof(frame_heading), "FRAME%d IMAGE", a->cfg.frame_id);
     label(a, 57, 195, frame_heading, 2, TEXT, 0);
+    action_button(a, (Rect){225, 186, 55, 35}, "EDIT", false);
     action_button(a, (Rect){284, 186, 110, 35}, "BROWSE", a->setting_row == 1);
     action_button(a, (Rect){397, 186, 76, 35}, "CLEAR", false);
     label(a, 57, 228, file_basename(a->cfg.button_image), 1, MUTED, 66);
@@ -1154,8 +1428,132 @@ static void draw_settings(App *a) {
         label(a, 524, 456, a->message, 1, GOLD, 66);
 
     box(r, (Rect){0, 507, SW, 37}, (SDL_Color){5, 7, 19, 255}, 255);
-    label(a, 24, 518, "DPAD:NAV  X:SELECT  SQUARE:CLEAR  O:BACK  START:CLOSE",
+    label(a, 24, 518, "DPAD:NAV  X:SELECT  TRI:EDIT IMAGE  SQUARE:CLEAR  O:BACK",
           2, TEXT, 72);
+}
+static void draw_checkerboard(SDL_Renderer *r, Rect rect) {
+    const int tile = 12;
+    for (int y = 0; y < rect.h; y += tile) {
+        for (int x = 0; x < rect.w; x += tile) {
+            const Uint8 gray = ((x + y) / tile % 2) ? 62 : 44;
+            box(r, (Rect){rect.x + x, rect.y + y, clampi(rect.w - x, 1, tile),
+                         clampi(rect.h - y, 1, tile)}, (SDL_Color){gray, gray, gray, 255}, 255);
+        }
+    }
+}
+static void update_artwork_preview(App *a) {
+    if (!a->artwork_preview_dirty) return;
+    a->artwork_preview_dirty = false;
+    const int target = a->artwork_target;
+    const Rect size = artwork_dimensions(a, target);
+    const bool icon = target == LAD_ART_ICON;
+    a->artwork_result_bounds = fit_rect(icon ? (Rect){46, 133, 154, 154} :
+                                             (Rect){34, 108, 410, 181}, size.w, size.h);
+    const LadArtwork *art = &a->artwork_draft;
+    const SDL_Color fill = target == LAD_ART_CARD ? palette[a->cfg.card_color] :
+                           target == LAD_ART_FRAME ? palette[a->cfg.button_color] : palette[8];
+    const bool alpha = target == LAD_ART_GATE ||
+                       (target == LAD_ART_FRAME && a->cfg.transparent_button);
+    SDL_DestroyTexture(a->artwork_result);
+    SDL_DestroyTexture(a->artwork_bubble);
+    a->artwork_result = a->artwork_bubble = NULL;
+    if ((!a->artwork_source && !art->solid) && target >= LAD_ART_ICON) return;
+    if (!replace_preview(a, &a->artwork_result, a->artwork_source, art,
+                         a->artwork_result_bounds, false, fill, alpha) ||
+        (icon && !replace_preview(a, &a->artwork_bubble, a->artwork_source, art,
+                                  a->artwork_result_bounds, true, fill, alpha)))
+        set_status(a, "COULD NOT RENDER IMAGE PREVIEW");
+}
+static void draw_artwork(App *a) {
+    static const char *titles[] = {
+        "BACKGROUND", "FRAME ARTWORK", "STARTUP IMAGE", "BUBBLE ICON", "BOOT SCREEN"
+    };
+    SDL_Renderer *r = a->renderer;
+    update_artwork_preview(a);
+    box(r, (Rect){0, 0, SW, SH}, (SDL_Color){9, 13, 29, 255}, 255);
+    box(r, (Rect){18, 71, 442, 399}, (SDL_Color){23, 29, 52, 255}, 255);
+    box(r, (Rect){480, 71, 462, 399}, (SDL_Color){23, 29, 52, 255}, 255);
+    label(a, 26, 24, titles[a->artwork_target], 3, TEXT, 0);
+    char value[32];
+    const Rect dimensions = artwork_dimensions(a, a->artwork_target);
+    snprintf(value, sizeof(value), "%d X %d PX", dimensions.w, dimensions.h);
+    label(a, 493, 31, value, 2, MUTED, 0);
+
+    if (a->artwork_target == LAD_ART_ICON) {
+        label(a, 46, 108, "ICON0.PNG", 2, TEXT, 0);
+        label(a, 264, 108, "HOME BUBBLE", 2, TEXT, 0);
+    } else {
+        label(a, 34, 86, "OUTPUT PREVIEW", 1, TEXT, 0);
+    }
+    if (a->artwork_result) {
+        draw_checkerboard(r, a->artwork_result_bounds);
+        draw_image(r, a->artwork_result, a->artwork_result_bounds);
+        outline(r, a->artwork_result_bounds, MUTED);
+        if (a->artwork_bubble)
+            draw_image(r, a->artwork_bubble, (Rect){264, 133, 154, 154});
+    } else {
+        label(a, 42, 188, "CHOOSE AN IMAGE OR ENABLE SOLID COLOR", 1, MUTED, 0);
+    }
+
+    label(a, 34, 316, a->artwork_original && !a->artwork_draft.solid ?
+          "SOURCE / DRAG CROP AREA" : "SOURCE", 1, TEXT, 0);
+    if (a->artwork_original) {
+        const Rect bounds = a->artwork_source_bounds;
+        draw_checkerboard(r, bounds);
+        draw_image(r, a->artwork_original, bounds);
+        if (!a->artwork_draft.solid) {
+            const SDL_Surface *source = a->artwork_source;
+            const SDL_Rect crop = lad_artwork_crop(source, &a->artwork_draft);
+            const Rect visible = {
+                bounds.x + crop.x * bounds.w / source->w,
+                bounds.y + crop.y * bounds.h / source->h,
+                clampi(crop.w * bounds.w / source->w, 1, bounds.w),
+                clampi(crop.h * bounds.h / source->h, 1, bounds.h)
+            };
+            outline(r, visible, GOLD);
+        }
+    } else {
+        label(a, 34, 376, *artwork_path(a, a->artwork_target) ?
+              "SOURCE UNAVAILABLE" : "NO SOURCE IMAGE", 1, MUTED, 0);
+    }
+
+    for (int row = 0; row < ARTWORK_ROWS; ++row) {
+        const ArtworkControl *control = &artwork_controls[row];
+        const int y = ARTWORK_ROW_Y + row * ARTWORK_ROW_H;
+        const int amount = *artwork_value(a, row);
+        const bool enabled = artwork_control_enabled(a, row);
+        const SDL_Color color = enabled ? TEXT : (SDL_Color){112, 124, 151, 255};
+        if (row == a->artwork_row)
+            outline(r, (Rect){492, y + 1, 432, ARTWORK_ROW_H - 2}, GOLD);
+        label(a, 502, y + 9, control->name, 2, color, 0);
+        if (row == 7) {
+            label(a, ARTWORK_SLIDER_X, y + 9, amount ? "ON" : "OFF", 2, TEXT, 0);
+            if (amount) {
+                SDL_Color swatch = {a->artwork_draft.red, a->artwork_draft.green,
+                                    a->artwork_draft.blue, 255};
+                const Rect sample = {ARTWORK_SLIDER_X + 54, y + 6, 112, 22};
+                box(r, sample, swatch, 255);
+                outline(r, sample, MUTED);
+            }
+        } else {
+            const int position = ARTWORK_SLIDER_X +
+                (amount - control->minimum) * ARTWORK_SLIDER_W /
+                (control->maximum - control->minimum);
+            box(r, (Rect){ARTWORK_SLIDER_X, y + 15, ARTWORK_SLIDER_W, 3}, color, 145);
+            box(r, (Rect){position - 4, y + 9, 9, 15}, color, 255);
+            snprintf(value, sizeof(value), "%d", amount);
+            label(a, 879, y + 11, value, 1, color, 0);
+        }
+    }
+
+    if (artwork_control_enabled(a, 0)) action_button(a, artwork_fit_button, "CENTER CROP", false);
+    action_button(a, artwork_cancel_button, "CANCEL", false);
+    action_button(a, artwork_reset_button, "RESET", false);
+    action_button(a, artwork_apply_button, "APPLY", true);
+    const bool status_visible = SDL_TICKS_PASSED(a->message_until, SDL_GetTicks());
+    label(a, 34, 526, status_visible ? a->message :
+          "DPAD:ADJUST  TRI:CENTER CROP  X:APPLY  SQUARE:RESET  O:CANCEL",
+          1, status_visible ? GOLD : MUTED, 0);
 }
 static void draw_browser(App *a) {
     SDL_Renderer *r = a->renderer;
@@ -1200,9 +1598,18 @@ static void draw_browser(App *a) {
           : "DPAD:BROWSE  X:OPEN  O:UP  TRIANGLE:CANCEL",
           2, TEXT, 72);
 }
+static void draw_livearea_preview(App *a) {
+    SDL_Renderer *r = a->renderer;
+    box(r, (Rect){0, 0, SW, SH}, (SDL_Color){10, 12, 29, 255}, 255);
+    draw_card(a, (Rect){CARD_X, 20, CARD_W, CARD_H}, false);
+    label(a, 65, 527, "LIVEAREA PREVIEW", 1, MUTED, 0);
+    label(a, 780, 527, "O / TAP HERE: CLOSE", 1, TEXT, 0);
+}
 static void render(App *a) {
     if (a->screen == SCREEN_EDITOR) draw_editor(a);
     else if (a->screen == SCREEN_SETTINGS) draw_settings(a);
+    else if (a->screen == SCREEN_ARTWORK) draw_artwork(a);
+    else if (a->screen == SCREEN_LIVEAREA) draw_livearea_preview(a);
     else draw_browser(a);
     SDL_RenderPresent(a->renderer);
 }
@@ -1285,9 +1692,7 @@ int main(int argc, char **argv) {
         SDL_DestroyWindow(a->window);
         free(a); IMG_Quit(); SDL_Quit(); return 4;
     }
-    if (a->cfg.card_image[0]) load_texture(a, a->cfg.card_image, &a->card_texture);
-    if (a->cfg.button_image[0]) load_texture(a, a->cfg.button_image, &a->button_texture);
-    if (a->cfg.gate_image[0]) load_texture(a, a->cfg.gate_image, &a->gate_texture);
+    for (int target = 0; target < LAD_ART_COUNT; ++target) reload_artwork(a, target);
     reload_frame_previews(a);
     for (int i = 0; i < SDL_NumJoysticks(); ++i) {
         if (SDL_IsGameController(i)) { a->pad = SDL_GameControllerOpen(i); break; }
@@ -1318,11 +1723,13 @@ int main(int argc, char **argv) {
         render(a);
         SDL_Delay(16);
     }
+    if (a->screen == SCREEN_ARTWORK) close_artwork(a);
     save(a);
     if (a->pad) SDL_GameControllerClose(a->pad);
     SDL_DestroyTexture(a->card_texture);
     SDL_DestroyTexture(a->button_texture);
     SDL_DestroyTexture(a->gate_texture);
+    SDL_DestroyTexture(a->icon_texture);
     for (int i = 0; i < LAD_MAX_FRAMES; ++i)
         SDL_DestroyTexture(a->frame_previews[i]);
     font_free(&a->font);

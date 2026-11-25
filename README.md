@@ -1,6 +1,6 @@
 # LiveArea Designer
 
-**PS Vita LiveArea editor — Web Editor 1.32 / native Vita VPK 1.31, lossless frame1 artwork, editable LiveArea gates and VPK editing.** Open-source C/SDL2 homebrew and a matching static web editor.
+**PS Vita LiveArea editor — Web Editor 1.33 / native Vita VPK 1.33, lossless frame1 artwork, editable LiveArea gates and VPK editing.** Open-source C/SDL2 homebrew and a matching static web editor.
 
 [**Web editor**](https://robin994.github.io/LiveAreaDesigner/) · [**GitHub releases**](https://github.com/robin994/LiveAreaDesigner/releases) · [**Source code**](https://github.com/robin994/LiveAreaDesigner)
 
@@ -28,7 +28,13 @@ The preview uses **actual slot geometry**, but is **not** a pixel-perfect emulat
 
 Everything runs in your browser; images never leave your computer. Choose PNG/JPG assets through the normal file picker or drag-and-drop. Layout settings use localStorage, images use IndexedDB. Supported on modern desktop and mobile browsers; the Vita's built-in browser is not a target.
 
-**Web 1.32 — issue #1:** When selecting ad0 (or another style without an RCO gate slot), the editor now shows **Include startup gate manually** above the gate image upload. It is **off by default**, so previously generated gate-less XML stays unchanged. Enable it to export a gate/startup-image declaration and the corresponding startup.png in the ZIP or patched VPK. Existing VPKs that already contain a gate retain this setting on import. The preview marks any manually enabled gate as **estimated**: without an RCO gate slot, its actual placement and visibility on hardware are unverified. This is a web-only fix; the native PS Vita application remains at 1.31.
+**Web 1.32 — issue #1:** When selecting ad0 (or another style without an RCO gate slot), the editor now shows **Include startup gate manually** above the gate image upload. It is **off by default**, so previously generated gate-less XML stays unchanged. Enable it to export a gate/startup-image declaration and the corresponding startup.png in the ZIP or patched VPK. Existing VPKs that already contain a gate retain this setting on import. The preview marks any manually enabled gate as **estimated**: without an RCO gate slot, its actual placement and visibility on hardware are unverified. The manual gate option is specific to the web editor.
+
+### Edit artwork and export screenshots in the browser
+
+- Use **Edit** on the card, a frame, the startup image, the bubble or the bootscreen. Upload a PNG/JPG, drag the crop rectangle or its lower-right corner, or use **Center crop to output ratio**. The crop sliders also work with the keyboard.
+- Set hue, saturation and brightness, or switch to **Solid color** and set the RGB sliders or color picker. **Apply** saves edits for that asset and frame in the browser. The original image stays available for resetting the crop and adjustments. Edited art is used in both the asset ZIP and patched VPK.
+- **LiveArea View** composites the card, configured frames and gate using the selected RCO layout. **Home Bubble** shows the edited icon as a circular preview with shell-style shading. In either view, **Export screenshot (.png)** downloads a 960 × 544 image without editing guides. The shell theme and effects are simulated. Vita PNG8 export can also reduce the palette of complex artwork.
 
 ### Edit an existing VPK in the browser
 
@@ -92,13 +98,22 @@ The web app exports a liveitem for **every frame in the selected style**, with l
 
 **Startup link:** newly created **frame1** defaults to `<target>psla:eboot</target>`, so its button launches the homebrew's executable. You can replace it with any supported Vita URI or URL, or clear it; existing imported VPK targets and saved frame1 customizations are not changed.
 
-PNG8 assets other than frame1 use an adaptive indexed palette; their alpha remains binary (fully transparent or opaque). Frame1 preserves full-color RGB or RGBA with partial transparency. Optional `icon0.png` and `pic0.png` are exported only after an image is selected.
+PNG8 assets other than frame1 use an adaptive indexed palette; their alpha remains binary (fully transparent or opaque). Frame1 preserves full-color RGB or RGBA with partial transparency. Optional `icon0.png` and `pic0.png` are exported when an image is selected or, on Vita, when a solid color is enabled.
 
 ## PS Vita native homebrew
 
 Install the `LIVAREA01.vpk` from [Releases](https://github.com/robin994/LiveAreaDesigner/releases). Title ID: `LIVAREA01`. A local config is saved to `ux0:data/LiveAreaDesigner/settings.ini`. Only the **front touchscreen** is accepted; the rear panel is ignored.
 
 The native **Template + VPK** Settings tab has **Open VPK** and **Patch VPK** controls. Browse to an existing homebrew VPK, import its basic LiveArea images/geometry, then adjust the frames and choose Patch VPK. The original VPK is never modified; the output is written to `ux0:data/LiveAreaDesigner/export/modified_livearea.vpk`. Only supported artwork/text/layout fields are imported; advanced multi-liveitem XML features are not retained. The native encoder keeps frame1 full-color and uses adaptive PNG8, zlib and size-aware fallback for the other assets. Keep your original VPK and validate the edited package on the console.
+
+### Edit artwork on the Vita
+
+- In **Settings**, select a background, frame, startup image, bubble or boot screen row and press **Triangle**, or tap **Edit** beside **Browse**. The **Icon** shortcut opens the icon editor directly.
+- Adjust crop width and height, then drag the highlighted area on the source preview or use **Crop X/Y**. **Center Crop** uses the destination aspect ratio. The D-pad selects and adjusts controls, and **R** increases the adjustment step.
+- Adjust hue, saturation and brightness or enable **Solid Color** and set RGB. **Cross** applies the settings, **Square** resets the draft and **Circle** cancels. The editor retains the source PNG/JPG. Applied settings are saved per asset and per frame and used by both **Export XML** and **Patch VPK**.
+- The bubble editor shows the square 128 × 128 icon beside a circular home screen preview. **LiveArea View** shows the composition using the selected RCO layout without the editing guides. The system shell, its animations and final on-device appearance are outside the preview.
+
+The `LIVAREA01` package also includes its own bubble icon, LiveArea background and startup artwork.
 
 ### Controls
 
@@ -173,7 +188,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ```
 
-Output: `build/LIVAREA01.vpk` (v1.31). RCO geometry and the larger background sizes were observed in the user's own Vita firmware, but the VPK editing workflow and full-color frame1 exports still require end-to-end hardware testing.
+Output: `build/LIVAREA01.vpk` (v1.33). RCO geometry and the larger background sizes were observed in the user's own Vita firmware, but the VPK editing workflow and full-color frame1 exports still require end-to-end hardware testing.
 
 Tests:
 
@@ -196,6 +211,11 @@ clang -std=c99 -Wall -Wextra -Werror -I/opt/homebrew/include -Isrc src/png_passt
 build/host-test/png_passthrough_smoke
 clang -std=c99 -O2 -Wall -Wextra -Werror -I/opt/homebrew/include -Isrc src/png_lossless.c src/png_passthrough.c tests/frame1_lossless_smoke.c -L/opt/homebrew/lib -lpng -lz -o build/host-test/frame1_lossless_smoke
 build/host-test/frame1_lossless_smoke
+# With host SDL2 and SDL2_image installed
+clang -std=c99 -Wall -Wextra -Werror -Itests/mocks -Isrc \
+  $(pkg-config --cflags sdl2 SDL2_image) src/artwork.c src/assets.c \
+  tests/artwork_smoke.c $(pkg-config --libs sdl2 SDL2_image) -lm -o build/host-test/artwork_smoke
+build/host-test/artwork_smoke
 ```
 
 ### Regenerating the RCO layout tables

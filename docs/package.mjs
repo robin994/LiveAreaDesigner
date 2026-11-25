@@ -1,8 +1,9 @@
-import { CARD, PALETTE } from "./geometry.mjs?v=1.32";
-import { generateTemplate } from "./template.mjs?v=1.32";
-import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.32";
-import { hasStartupGate } from "./template-preview.mjs?v=1.32";
-import { quantizeRgba } from "./quantizer.mjs?v=1.32";
+import { frameInProject, hasArtworkEdits, paintArtwork } from "./artwork.mjs?v=1.33";
+import { CARD, PALETTE } from "./geometry.mjs?v=1.33";
+import { generateTemplate } from "./template.mjs?v=1.33";
+import { allFrameLayouts, frameKey } from "./frame-model.mjs?v=1.33";
+import { hasStartupGate } from "./template-preview.mjs?v=1.33";
+import { quantizeRgba } from "./quantizer.mjs?v=1.33";
 
 const encoder = new TextEncoder();
 const SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
@@ -218,7 +219,7 @@ export function makeZip(entries) {
   return new Blob([...locals, cdir, footer], { type: "application/zip" });
 }
 
-function artwork(width, height, background, source, transparent = false, placeholder = false) {
+function artwork(width, height, background, source, transparent = false, placeholder = false, edit) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -227,8 +228,7 @@ function artwork(width, height, background, source, transparent = false, placeho
     context.fillStyle = background;
     context.fillRect(0, 0, width, height);
   }
-  if (source?.image) context.drawImage(source.image, 0, 0, width, height);
-  else if (placeholder) {
+  if (!paintArtwork(context, source, edit, 0, 0, width, height) && placeholder) {
     context.font = `bold ${Math.min(30, height / 5)}px sans-serif`;
     context.textAlign = "center";
     context.textBaseline = "middle";
@@ -333,18 +333,18 @@ async function preserveFrame1Png(source, width, height, transparency) {
 
 async function addImage(entries, filename, w, h, color, image, transparency,
                         placeholder = false, optimization = true, warnings = [],
-                        losslessFrame1 = false) {
+                        losslessFrame1 = false, edit) {
   if (losslessFrame1) {
-    const preserved = await preserveFrame1Png(image, w, h, transparency);
+    const preserved = !hasArtworkEdits(edit) && await preserveFrame1Png(image, w, h, transparency);
     const png = preserved || await encodeTruecolorPng(w, h,
-      artwork(w, h, color, image, transparency, placeholder), transparency);
+      artwork(w, h, color, image, transparency, placeholder, edit), transparency);
     if (png.length > 384 * 1024)
       warnings.push("frame1.png: lossless full-color image is large; confirm it renders on a real Vita.");
     entries.push({ name: filename, data: png });
     return;
   }
   const maxBytes = filename.endsWith("/bg0.png") ? 384 * 1024 : Infinity;
-  if (!transparency && image && maxBytes !== Infinity) {
+  if (!hasArtworkEdits(edit) && !transparency && image && maxBytes !== Infinity) {
     const preserved = await preserveOpaqueIndexedPng(image, w, h, maxBytes);
     if (preserved) {
       entries.push({ name: filename, data: preserved });
@@ -352,7 +352,7 @@ async function addImage(entries, filename, w, h, color, image, transparency,
     }
   }
   const png = await encodeVitaPng(filename, w, h,
-    artwork(w, h, color, image, transparency, placeholder),
+    artwork(w, h, color, image, transparency, placeholder, edit),
     transparency, { optimize: optimization, warnings });
   entries.push({ name: filename, data: png });
 }
@@ -363,27 +363,32 @@ async function addImage(entries, filename, w, h, color, image, transparency,
  * selected real Vita layout; the editor cannot change fixed gate/frame slots.
  */
 export async function buildLiveAreaPackage(layout, images, frameLayouts = {},
-                                           { optimizeImages = true, warnings = [] } = {}) {
+    { optimizeImages = true, warnings = [], artworkEdits = {}, importedFrameKeys = null } = {}) {
   const root = "sce_sys/livearea/contents/";
-  const entries = [{ name: root + "template.xml", data: generateTemplate(layout, frameLayouts) }];
+  const frameSource = key => images.frames?.[key] ??
+    (key === frameKey(layout.templateStyle, layout.frameId) ? images.button : null);
+  const frames = allFrameLayouts(layout, frameLayouts).filter(item => {
+    const key = frameKey(item.templateStyle, item.frameId);
+    return frameInProject(item, frameSource(key), artworkEdits[key], importedFrameKeys);
+  });
+  const entries = [{ name: root + "template.xml", data: generateTemplate(layout, frameLayouts, frames) }];
   await addImage(entries, root + "bg0.png", CARD.width, CARD.height,
-    PALETTE[layout.cardColor].hex, images.card, false, false, optimizeImages, warnings);
+    PALETTE[layout.cardColor].hex, images.card, false, false, optimizeImages, warnings, false, artworkEdits.card);
   if (hasStartupGate(layout)) {
     await addImage(entries, root + "startup.png", 280, 158,
       PALETTE[layout.buttonColor].hex, images.gate, true, !images.gate,
-      optimizeImages, warnings);
+      optimizeImages, warnings, false, artworkEdits.gate);
   }
-  for (const item of allFrameLayouts(layout, frameLayouts)) {
+  for (const item of frames) {
     const key = frameKey(item.templateStyle, item.frameId);
     await addImage(entries, root + `frame${item.frameId}.png`, item.w, item.h,
-      PALETTE[item.buttonColor].hex,
-      images.frames?.[key] ?? (item.frameId === layout.frameId ? images.button : null),
-      item.transparentButton, false, optimizeImages, warnings, item.frameId === 1);
+      PALETTE[item.buttonColor].hex, frameSource(key), item.transparentButton,
+      false, optimizeImages, warnings, item.frameId === 1, artworkEdits[key]);
   }
-  if (images.icon) await addImage(entries, "sce_sys/icon0.png", 128, 128, "#000000",
-    images.icon, false, false, optimizeImages, warnings);
-  if (images.boot) await addImage(entries, "sce_sys/pic0.png", 960, 544, "#000000",
-    images.boot, false, false, optimizeImages, warnings);
+  if (images.icon || artworkEdits.icon?.solid) await addImage(entries, "sce_sys/icon0.png", 128, 128, "#000000",
+    images.icon, false, false, optimizeImages, warnings, false, artworkEdits.icon);
+  if (images.boot || artworkEdits.boot?.solid) await addImage(entries, "sce_sys/pic0.png", 960, 544, "#000000",
+    images.boot, false, false, optimizeImages, warnings, false, artworkEdits.boot);
   for (const [i, page] of (images.manual || []).entries()) {
     await addImage(entries, `sce_sys/manual/${String(i + 1).padStart(3, "0")}.png`,
       960, 544, "#000000", page, false, false, optimizeImages, warnings);

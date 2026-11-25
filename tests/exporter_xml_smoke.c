@@ -110,6 +110,31 @@ int main(void) {
     assert(strstr(xml, "<target>psla:eboot</target>") == NULL);
     assert(strstr(xml, "width=\"132\" height=\"75\"") != NULL);
     assert(strstr(xml, "width=\"286\" height=\"168\"") != NULL);
+    /* An imported layout skips unused slots until artwork is added. */
+    cfg.imported_layout = 1;
+    first->imported = 1;
+    first->text[0] = 0;
+    cfg.frames[0][1].initialized = 0;
+    cfg.frame_text[0] = 0;
+    cfg.button_image[0] = 0;
+    cfg.artwork[LAD_ART_FRAME] = (LadArtwork){0};
+    file = tmpfile();
+    assert(file && lad_write_template(file, &cfg));
+    rewind(file);
+    memset(xml, 0, sizeof(xml));
+    fread(xml, 1, sizeof(xml) - 1, file);
+    fclose(file);
+    assert(strstr(xml, "frame1.png") != NULL);
+    assert(strstr(xml, "frame2.png") == NULL && strstr(xml, "frame3.png") == NULL);
+    cfg.artwork[LAD_ART_FRAME].solid = 1;
+    file = tmpfile();
+    assert(file && lad_write_template(file, &cfg));
+    rewind(file);
+    memset(xml, 0, sizeof(xml));
+    fread(xml, 1, sizeof(xml) - 1, file);
+    fclose(file);
+    assert(strstr(xml, "frame3.png") != NULL);
+
     puts("Native template.xml smoke tests passed");
     return 0;
 }

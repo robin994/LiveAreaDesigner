@@ -17,6 +17,8 @@ int lad_editor_center_y(const DesignerConfig *config);
 void lad_resolve_frame(const DesignerConfig *config, int frame_id,
                        DesignerFrame *out);
 
+bool lad_include_frame(const DesignerConfig *cfg, const DesignerFrame *frame);
+
 /* Vita-specific PNG8 asset writer + template.xml output directory. */
 bool lad_export_bundle(const DesignerConfig *config, char *error, size_t error_size);
 

@@ -1,6 +1,6 @@
-import { normalizeLayout } from "./geometry.mjs?v=1.32";
-import { frameRelativeOffsets, hasStartupGate } from "./template-preview.mjs?v=1.32";
-import { allFrameLayouts } from "./frame-model.mjs?v=1.32";
+import { normalizeLayout } from "./geometry.mjs?v=1.33";
+import { frameRelativeOffsets, hasStartupGate } from "./template-preview.mjs?v=1.33";
+import { allFrameLayouts } from "./frame-model.mjs?v=1.33";
 
 function escapeXml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -16,7 +16,7 @@ function escapeXml(value) {
  * entire card. The centers and dimensions are sourced from the PS Vita
  * firmware's RCOF layout hints.
  */
-export function generateTemplate(layoutInput, frameLayouts = {}) {
+export function generateTemplate(layoutInput, frameLayouts = {}, frames) {
   const layout = normalizeLayout(layoutInput);
   const xml = [
     '<?xml version="1.0" encoding="utf-8"?>',
@@ -29,7 +29,7 @@ export function generateTemplate(layoutInput, frameLayouts = {}) {
   if (hasStartupGate(layout)) {
     xml.push("  <gate>", "    <startup-image>startup.png</startup-image>", "  </gate>");
   }
-  for (const item of allFrameLayouts(layout, frameLayouts)) {
+  for (const item of frames ?? allFrameLayouts(layout, frameLayouts)) {
     const { x, y } = frameRelativeOffsets(item);
     xml.push(
       `  <frame id="frame${item.frameId}" multi="o" autoflip="${item.autoFlip ? 1 : 0}" rev="1">`,

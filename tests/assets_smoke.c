@@ -7,7 +7,7 @@
 #include <sys/stat.h>
 
 static int cursor[8];
-static const char *root_names[] = {"readme.txt", "IMAGE.JPG", "data", "cover.png"};
+static const char *root_names[] = {"readme.txt", "IMAGE.JPG", "data", "cover.png", "QA_TEST.VPK"};
 static const char *data_names[] = {"images", "unrelated.mp3", "button.JPEG"};
 static const char *image_names[] = {"splash.png"};
 
@@ -23,7 +23,7 @@ SceUID sceIoDopen(const char *path) {
 int sceIoDread(SceUID fd, SceIoDirent *entry) {
     const char **items = NULL;
     int n = 0;
-    if (fd == 1) { items = root_names; n = 4; }
+    if (fd == 1) { items = root_names; n = 5; }
     if (fd == 3) { items = data_names; n = 3; }
     if (fd == 4) { items = image_names; n = 1; }
     if (cursor[fd] >= n) return 0;
@@ -61,17 +61,20 @@ int main(void) {
     snprintf(cfg.button_image, sizeof(cfg.button_image), "ux0:/data/frame1-red.png");
     snprintf(cfg.frame_text, sizeof(cfg.frame_text), "FIRST FRAME TEXT");
     cfg.x = 89;
+    cfg.artwork[LAD_ART_FRAME].brightness = 25;
     designer_store_active_frame(&cfg);
     designer_load_active_frame(&cfg, 0, 2, &fallback);
     snprintf(cfg.button_image, sizeof(cfg.button_image), "ux0:/data/frame2-blue.png");
     snprintf(cfg.frame_text, sizeof(cfg.frame_text), "SECOND FRAME TEXT");
     cfg.w = 98;
+    cfg.artwork[LAD_ART_FRAME].crop_x = -60;
     designer_store_active_frame(&cfg);
     designer_load_active_frame(&cfg, 0, 1, &fallback);
     assert(cfg.x == 89 && cfg.w == 126 && cfg.frame_id == 1);
     assert(strcmp(cfg.frame_text, "FIRST FRAME TEXT") == 0);
     assert(strcmp(cfg.button_image, "ux0:/data/frame1-red.png") == 0);
     cfg.invert_x = 1; cfg.invert_y = 1;
+    cfg.artwork[LAD_ART_ICON] = (LadArtwork){.solid = 1, .blue = 200};
 
     /* Run this test from build/host-test so that settings.ini stays temporary. */
     mkdir("ux0:data", 0777);
@@ -81,15 +84,22 @@ int main(void) {
     designer_load(&restored);
     assert(restored.frame_id == 1 && restored.w == 126);
     assert(restored.invert_x == 1 && restored.invert_y == 1);
+    assert(restored.artwork[LAD_ART_FRAME].brightness == 25);
+    assert(restored.artwork[LAD_ART_ICON].solid == 1);
+    assert(restored.artwork[LAD_ART_ICON].blue == 200);
     designer_load_active_frame(&restored, 0, 2, &fallback);
     assert(restored.w == 98);
+    assert(restored.artwork[LAD_ART_FRAME].brightness == 0);
+    assert(restored.artwork[LAD_ART_FRAME].crop_x == -60);
     assert(strcmp(restored.frame_text, "SECOND FRAME TEXT") == 0);
     assert(strcmp(restored.button_image, "ux0:/data/frame2-blue.png") == 0);
     assert(lad_is_image("card.png") && lad_is_image("photo.JPG"));
     assert(lad_is_image("photo.jpeg") && !lad_is_image("photo.gif"));
     assert(!lad_is_image("photo.png.txt"));
+    assert(lad_is_vpk("homebrew.vpk") && lad_is_vpk("HOME.VPK"));
+    assert(!lad_is_vpk("homebrew.vpk.zip"));
 
-    FileBrowser b;
+    FileBrowser b = {0};
     browser_root(&b);
     assert(b.count == 2 && strcmp(b.items[0].name, "ux0:/") == 0);
     char picked[LAD_PATH_MAX];
@@ -115,6 +125,19 @@ int main(void) {
     assert(browser_parent(&b) && strcmp(b.cwd, "ux0:/") == 0);
     assert(browser_parent(&b) && strcmp(b.cwd, "") == 0);
     assert(!browser_parent(&b));
+
+    /* VPK import uses the same browser but must hide PNG/JPG entries. */
+    b.filter_vpk = 1;
+    browser_root(&b);
+    assert(b.count == 2);
+    assert(!browser_activate(&b, picked, sizeof(picked)));
+    assert(strcmp(b.cwd, "ux0:/") == 0);
+    assert(b.count == 2);
+    assert(b.items[0].directory && strcmp(b.items[0].name, "data") == 0);
+    assert(!b.items[1].directory && strcmp(b.items[1].name, "QA_TEST.VPK") == 0);
+    b.selected = 1;
+    assert(browser_activate(&b, picked, sizeof(picked)));
+    assert(strcmp(picked, "ux0:/QA_TEST.VPK") == 0);
     puts("Asset browser smoke tests passed");
     return 0;
 }

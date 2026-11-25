@@ -11,12 +11,25 @@
 #define LAD_MAX_FRAMES 10
 #define LAD_DEFAULT_FRAME1_TARGET "psla:eboot"
 
+typedef enum {
+    LAD_ART_CARD, LAD_ART_FRAME, LAD_ART_GATE, LAD_ART_ICON, LAD_ART_BOOT,
+    LAD_ART_COUNT
+} LadArtworkTarget;
+
+/* Crop dimensions and offsets are percentages. Zero is the neutral edit. */
+typedef struct {
+    int crop_width, crop_height, crop_x, crop_y;
+    int hue, saturation, brightness;
+    int solid, red, green, blue;
+} LadArtwork;
+
 /** Independent liveitem in a fixed system frame slot. */
 typedef struct {
-    int initialized;
+    int initialized, imported;
     int x, y, w, h;
     int button_color, aspect_lock, aspect_width, aspect_height;
     int transparent_button, age_limit, vita_only, autoflip;
+    LadArtwork artwork;
     char image[LAD_PATH_MAX];
     char target[256];
     char text[160];
@@ -39,6 +52,8 @@ typedef struct {
     int preview_template;
     int invert_x;
     int invert_y;
+    int imported_layout, imported_frame;
+    LadArtwork artwork[LAD_ART_COUNT];
     char card_image[LAD_PATH_MAX];
     char button_image[LAD_PATH_MAX];
     char gate_image[LAD_PATH_MAX];

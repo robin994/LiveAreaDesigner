@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.33 - 2026-11-25
+
+### Web editor
+
+- Added adjustable crop bounds with pointer and touch support, hue, saturation, brightness and solid RGB for the card, each frame, startup image, icon and boot screen.
+- Added LiveArea and circular Home Bubble views with guide-free 960 × 544 screenshot exports.
+- Apply artwork changes to asset ZIP and VPK output. Preserve original VPK artwork bytes where compatible and skip unused frame slots in imported templates.
+
+### Native Vita VPK
+
+- Added original LiveArea background, startup artwork and a bubble icon to the editor’s own VPK.
+- Added a guide-free LiveArea preview and side-by-side square and circular views of the edited icon. Unused frame slots in an imported VPK stay empty in the preview and in the exported template.
+- Added crop position and size, center crop, hue, saturation, brightness and solid RGB colors for the background, each frame, startup image, icon and boot screen. The edits persist and are applied to the exported assets and patched VPK.
+
 ## Web Editor 1.32 - 2026-10-22 (manual gate for ad0, issue #1)
 
 - **Optional startup gate for ad0 and other styles without a native RCO gate slot.** The web editor offers an explicit **Include startup gate manually** checkbox. When enabled it unlocks the image uploader, includes the gate/startup-image tags in template.xml and packages startup.png into the ZIP or modified VPK.

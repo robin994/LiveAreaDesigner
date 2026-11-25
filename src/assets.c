@@ -48,6 +48,7 @@ void designer_defaults(DesignerConfig *cfg) {
 void designer_frame_snapshot(const DesignerConfig *cfg, DesignerFrame *out) {
     memset(out, 0, sizeof(*out));
     out->initialized = 1;
+    out->imported = cfg->imported_frame;
     out->x = cfg->x; out->y = cfg->y; out->w = cfg->w; out->h = cfg->h;
     out->button_color = cfg->button_color;
     out->aspect_lock = cfg->aspect_lock;
@@ -57,6 +58,7 @@ void designer_frame_snapshot(const DesignerConfig *cfg, DesignerFrame *out) {
     out->age_limit = cfg->age_limit;
     out->vita_only = cfg->vita_only;
     out->autoflip = cfg->autoflip;
+    out->artwork = cfg->artwork[LAD_ART_FRAME];
     snprintf(out->image, sizeof(out->image), "%s", cfg->button_image);
     snprintf(out->target, sizeof(out->target), "%s", cfg->frame_target);
     snprintf(out->text, sizeof(out->text), "%s", cfg->frame_text);
@@ -79,6 +81,7 @@ void designer_load_active_frame(DesignerConfig *cfg, int style, int id,
     if (!saved->initialized) return;
     cfg->template_style = style;
     cfg->frame_id = id;
+    cfg->imported_frame = saved->imported;
     cfg->x = saved->x; cfg->y = saved->y;
     cfg->w = saved->w; cfg->h = saved->h;
     cfg->button_color = saved->button_color;
@@ -89,10 +92,29 @@ void designer_load_active_frame(DesignerConfig *cfg, int style, int id,
     cfg->age_limit = saved->age_limit;
     cfg->vita_only = saved->vita_only;
     cfg->autoflip = saved->autoflip;
+    cfg->artwork[LAD_ART_FRAME] = saved->artwork;
     snprintf(cfg->button_image, sizeof(cfg->button_image), "%s", saved->image);
     snprintf(cfg->frame_target, sizeof(cfg->frame_target), "%s", saved->target);
     snprintf(cfg->frame_text, sizeof(cfg->frame_text), "%s", saved->text);
     snprintf(cfg->frame_lang, sizeof(cfg->frame_lang), "%s", saved->lang);
+}
+
+static void read_artwork(const char *value, LadArtwork *art) {
+    LadArtwork parsed = {0};
+    /* Limit conversion width so even manually edited INIs cannot overflow int. */
+    if (sscanf(value, "%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d,%5d",
+               &parsed.crop_width, &parsed.crop_height, &parsed.crop_x,
+               &parsed.crop_y, &parsed.hue, &parsed.saturation,
+               &parsed.brightness, &parsed.solid, &parsed.red,
+               &parsed.green, &parsed.blue) == 11)
+        *art = parsed;
+}
+
+static int write_artwork(FILE *file, const char *key, const LadArtwork *art) {
+    return fprintf(file, "%s=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", key,
+                   art->crop_width, art->crop_height, art->crop_x, art->crop_y,
+                   art->hue, art->saturation, art->brightness, art->solid,
+                   art->red, art->green, art->blue);
 }
 
 void designer_load(DesignerConfig *cfg) {
@@ -113,7 +135,8 @@ void designer_load(DesignerConfig *cfg) {
                 continue;
             DesignerFrame *item = &cfg->frames[style][id - 1];
             item->initialized = 1;
-            if (!strcmp(field, "x")) item->x = atoi(eq);
+            if (!strcmp(field, "imported")) item->imported = atoi(eq) != 0;
+            else if (!strcmp(field, "x")) item->x = atoi(eq);
             else if (!strcmp(field, "y")) item->y = atoi(eq);
             else if (!strcmp(field, "w")) item->w = atoi(eq);
             else if (!strcmp(field, "h")) item->h = atoi(eq);
@@ -125,6 +148,7 @@ void designer_load(DesignerConfig *cfg) {
             else if (!strcmp(field, "age")) item->age_limit = atoi(eq);
             else if (!strcmp(field, "model")) item->vita_only = atoi(eq);
             else if (!strcmp(field, "autoflip")) item->autoflip = atoi(eq);
+            else if (!strcmp(field, "artwork")) read_artwork(eq, &item->artwork);
             else if (!strcmp(field, "image") && strlen(eq) < sizeof(item->image))
                 strcpy(item->image, eq);
             else if (!strcmp(field, "target") && strlen(eq) < sizeof(item->target))
@@ -133,6 +157,13 @@ void designer_load(DesignerConfig *cfg) {
                 strcpy(item->text, eq);
             else if (!strcmp(field, "lang") && strlen(eq) < sizeof(item->lang))
                 strcpy(item->lang, eq);
+            continue;
+        }
+        int asset;
+        char suffix;
+        if (sscanf(line, "artwork.%2d%c", &asset, &suffix) == 1) {
+            if (asset >= 0 && asset < LAD_ART_COUNT)
+                read_artwork(eq, &cfg->artwork[asset]);
             continue;
         }
         if (strcmp(line, "x") == 0) cfg->x = atoi(eq);
@@ -152,6 +183,7 @@ void designer_load(DesignerConfig *cfg) {
         else if (strcmp(line, "autoflip") == 0) cfg->autoflip = atoi(eq);
         else if (strcmp(line, "preview_template") == 0) cfg->preview_template = atoi(eq);
         else if (strcmp(line, "invert_x") == 0) cfg->invert_x = atoi(eq) != 0;
+        else if (strcmp(line, "imported_layout") == 0) cfg->imported_layout = atoi(eq) != 0;
         else if (strcmp(line, "invert_y") == 0) cfg->invert_y = atoi(eq) != 0;
         else if (strcmp(line, "card_image") == 0 && strlen(eq) < sizeof(cfg->card_image))
             strcpy(cfg->card_image, eq);
@@ -190,15 +222,20 @@ bool designer_save(const DesignerConfig *cfg) {
         "x=%d\ny=%d\nw=%d\nh=%d\ncard_color=%d\nbutton_color=%d\n"
         "aspect_lock=%d\naspect_width=%d\naspect_height=%d\ntransparent_button=%d\n"
         "template_style=%d\nframe_id=%d\nage_limit=%d\nvita_only=%d\nautoflip=%d\npreview_template=%d\n"
-        "invert_x=%d\ninvert_y=%d\n"
+        "invert_x=%d\ninvert_y=%d\nimported_layout=%d\n"
         "card_image=%s\nbutton_image=%s\ngate_image=%s\nicon_image=%s\nboot_image=%s\nmanual_dir=%s\n"
         "frame_target=%s\nframe_text=%s\nframe_lang=%s\n",
         cfg->x, cfg->y, cfg->w, cfg->h, cfg->card_color, cfg->button_color,
         cfg->aspect_lock, cfg->aspect_width, cfg->aspect_height, cfg->transparent_button,
         cfg->template_style, cfg->frame_id, cfg->age_limit, cfg->vita_only, cfg->autoflip,
-        cfg->preview_template, cfg->invert_x, cfg->invert_y,
+        cfg->preview_template, cfg->invert_x, cfg->invert_y, cfg->imported_layout,
         cfg->card_image, cfg->button_image, cfg->gate_image, cfg->icon_image,
         cfg->boot_image, cfg->manual_dir, cfg->frame_target, cfg->frame_text, cfg->frame_lang);
+    for (int asset = 0; asset < LAD_ART_COUNT; ++asset) {
+        char key[32];
+        snprintf(key, sizeof(key), "artwork.%d", asset);
+        if (write_artwork(f, key, &cfg->artwork[asset]) < 0) ok = -1;
+    }
     for (int style = 0; style < LAD_STYLE_COUNT; ++style) {
         for (int id = 1; id <= LAD_MAX_FRAMES; ++id) {
             DesignerFrame active;
@@ -213,15 +250,19 @@ bool designer_save(const DesignerConfig *cfg) {
                 "frame.%d.%d.color=%d\nframe.%d.%d.lock=%d\nframe.%d.%d.aspectw=%d\n"
                 "frame.%d.%d.aspecth=%d\nframe.%d.%d.alpha=%d\n"
                 "frame.%d.%d.age=%d\nframe.%d.%d.model=%d\nframe.%d.%d.autoflip=%d\n"
+                "frame.%d.%d.imported=%d\n"
                 "frame.%d.%d.image=%s\nframe.%d.%d.target=%s\nframe.%d.%d.text=%s\nframe.%d.%d.lang=%s\n",
                 style,id,item->x, style,id,item->y, style,id,item->w, style,id,item->h,
                 style,id,item->button_color, style,id,item->aspect_lock,
                 style,id,item->aspect_width, style,id,item->aspect_height,
                 style,id,item->transparent_button, style,id,item->age_limit,
                 style,id,item->vita_only, style,id,item->autoflip,
-                style,id,item->image, style,id,item->target, style,id,item->text,
+                style,id,item->imported, style,id,item->image, style,id,item->target, style,id,item->text,
                 style,id,item->lang);
             if (result < 0) ok = -1;
+            char key[48];
+            snprintf(key, sizeof(key), "frame.%d.%d.artwork", style, id);
+            if (write_artwork(f, key, &item->artwork) < 0) ok = -1;
         }
     }
     if (fflush(f) != 0) ok = -1;

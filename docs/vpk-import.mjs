@@ -1,7 +1,7 @@
-import { CARD, DEFAULT_LAYOUT, normalizeLayout } from "./geometry.mjs?v=1.32";
-import { makeFrameLayout, frameKey } from "./frame-model.mjs?v=1.32";
-import { RCO_LAYOUTS, getRcoLayout } from "./template-slots.mjs?v=1.32";
-import { readArchiveEntry } from "./vpk.mjs?v=1.32";
+import { CARD, DEFAULT_LAYOUT, normalizeLayout } from "./geometry.mjs?v=1.33";
+import { makeFrameLayout, frameKey } from "./frame-model.mjs?v=1.33";
+import { RCO_LAYOUTS, getRcoLayout } from "./template-slots.mjs?v=1.33";
+import { readArchiveEntry } from "./vpk.mjs?v=1.33";
 
 const CONTENTS = "sce_sys/livearea/contents/";
 const decode = new TextDecoder("utf-8", { fatal: true });
@@ -44,13 +44,13 @@ export function parseVpkTemplate(xml) {
   const layouts = {};
   const paths = new Map();
   const notes = [];
-  const langSource = root.querySelector("frame");
-  const fallback = makeFrameLayout(style, 1, DEFAULT_LAYOUT);
+  const importedFrameKeys = [];
   let selected = null;
   for (let i = 1; i <= slotLayout.frames.length; i++) {
     const id = i;
     const native = slotLayout.frames[i - 1];
     const sourceFrame = [...root.querySelectorAll("frame")].find(x => x.getAttribute("id") === `frame${id}`);
+    if (sourceFrame) importedFrameKeys.push(frameKey(style, id));
     const liveitems = sourceFrame ? [...sourceFrame.querySelectorAll("liveitem")] : [];
     if (liveitems.length > 1) notes.push(`frame${id} contains multiple liveitems; only the first is editable.`);
     const liveitem = liveitems[0];
@@ -89,9 +89,9 @@ export function parseVpkTemplate(xml) {
   if (gate) paths.set("gate", gate);
   if (root.querySelectorAll("frame").length > slotLayout.frames.length)
     notes.push("Some frame ids are not supported by this firmware layout.");
-  if (!langSource) notes.push("No editable frame definitions were found; default frames created.");
+
   return { layout: layouts[frameKey(style, selected)], frameLayouts: layouts,
-    style, paths, notes };
+    style, paths, notes, importedFrameKeys };
 }
 
 export async function readVpkProject(archive) {

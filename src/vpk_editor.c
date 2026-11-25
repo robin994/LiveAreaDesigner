@@ -105,11 +105,11 @@ static int clean_image_name(const char *name) {
     return lad_is_image(name);
 }
 
-static int extract_image(zip_t *source, const char *asset_name,
-                         const char *label, char *output, size_t capacity) {
+static int extract_archive_image(zip_t *source, const char *in_name,
+                                 const char *label, char *output, size_t capacity) {
+    const char *asset_name = strrchr(in_name, '/');
+    asset_name = asset_name ? asset_name + 1 : in_name;
     if (!clean_image_name(asset_name)) return 0;
-    char in_name[256];
-    snprintf(in_name, sizeof(in_name), CONTENTS "%s", asset_name);
     zip_stat_t stats;
     zip_stat_init(&stats);
     if (zip_stat(source, in_name, 0, &stats) != 0 ||
@@ -141,6 +141,15 @@ static int extract_image(zip_t *source, const char *asset_name,
     return 1;
 }
 
+static int extract_image(zip_t *source, const char *asset_name,
+                         const char *label, char *output, size_t capacity) {
+    if (!clean_image_name(asset_name)) return 0;
+    char in_name[256];
+    if (snprintf(in_name, sizeof(in_name), CONTENTS "%s", asset_name) >=
+        (int)sizeof(in_name)) return 0;
+    return extract_archive_image(source, in_name, label, output, capacity);
+}
+
 static int image_node(const char *begin, const char *end,
                       char *tag, size_t tag_capacity,
                       char *filename, size_t filename_capacity) {
@@ -157,6 +166,13 @@ static int image_node(const char *begin, const char *end,
         return 0;
     memcpy(filename, close + 1, (size_t)(text_end - close - 1));
     filename[text_end - close - 1] = 0;
+    /* Existing VPKs often pretty-print the image filename on its own line. */
+    char *first = filename;
+    while (*first && isspace((unsigned char)*first)) first++;
+    char *last = first + strlen(first);
+    while (last > first && isspace((unsigned char)last[-1])) last--;
+    *last = 0;
+    if (first != filename) memmove(filename, first, strlen(first) + 1);
     xml_unescape(filename);
     return clean_image_name(filename);
 }
@@ -190,9 +206,17 @@ bool lad_import_existing_vpk(const char *source, DesignerConfig *cfg,
         return false;
     }
     zip_file_t *template_file = zip_fopen(archive, CONTENTS "template.xml", 0);
-    zip_int64_t count = template_file ?
-        zip_fread(template_file, xml, stats.size) : -1;
-    int valid = count == (zip_int64_t)stats.size;
+    zip_uint64_t completed = 0;
+    if (template_file) {
+        while (completed < stats.size) {
+            zip_int64_t count = zip_fread(template_file, xml + completed,
+                                          stats.size - completed);
+            if (count <= 0) break;
+            completed += (zip_uint64_t)count;
+        }
+    }
+    int valid = template_file && completed == stats.size &&
+                !memchr(xml, '\0', (size_t)stats.size);
     if (template_file && zip_fclose(template_file) < 0) valid = 0;
     if (!valid) {
         report(message, size, "COULD NOT READ TEMPLATE.XML");
@@ -224,15 +248,12 @@ bool lad_import_existing_vpk(const char *source, DesignerConfig *cfg,
 
     sceIoMkdir("ux0:data/LiveAreaDesigner", 0777);
     sceIoMkdir(IMPORT_DIR, 0777);
-    memcpy(staged, cfg, sizeof(*cfg));
+    /* A VPK import replaces the project. Do not let frames and image paths
+       from the previously edited VPK leak into another application's export. */
+    designer_defaults(staged);
     staged->template_style = style;
     staged->preview_template = 1;
-    memset(staged->frames[style], 0, sizeof(staged->frames[style]));
-    staged->card_image[0] = 0;
-    staged->gate_image[0] = 0;
-    staged->icon_image[0] = 0;
-    staged->boot_image[0] = 0;
-    staged->manual_dir[0] = 0;
+    staged->imported_layout = 1;
 
     char label[80], name[180], tag[512];
     const char *background = strstr(opening_end, "<livearea-background");
@@ -253,8 +274,13 @@ bool lad_import_existing_vpk(const char *source, DesignerConfig *cfg,
                      name, sizeof(name)))
         extract_image(archive, name, "gate", staged->gate_image,
                       sizeof(staged->gate_image));
+    extract_archive_image(archive, "sce_sys/icon0.png", "icon0",
+                          staged->icon_image, sizeof(staged->icon_image));
+    extract_archive_image(archive, "sce_sys/pic0.png", "pic0",
+                          staged->boot_image, sizeof(staged->boot_image));
 
     int imported = 0;
+    int first_imported = 0;
     const char *cursor = opening_end;
     while ((cursor = strstr(cursor, "<frame")) != NULL && imported < LAD_MAX_FRAMES) {
         const char *frame_tag_end = strchr(cursor, '>');
@@ -269,7 +295,9 @@ bool lad_import_existing_vpk(const char *source, DesignerConfig *cfg,
                 DesignerFrame *item = &staged->frames[style][id - 1];
                 memset(item, 0, sizeof(*item));
                 item->initialized = 1;
+                item->imported = 1;
                 item->button_color = 1;
+                item->transparent_button = 1; /* Keep imported PNG alpha. */
                 item->w = slot->width >= 24 ? slot->width : 120;
                 item->h = slot->height >= 24 ? slot->height : 80;
                 if (item->w > 286) item->w = 286;
@@ -304,18 +332,21 @@ bool lad_import_existing_vpk(const char *source, DesignerConfig *cfg,
                     extract_image(archive, name, label, item->image,
                                   sizeof(item->image));
                 }
+                item->aspect_width = item->w;
+                item->aspect_height = item->h;
                 text_between(frame_tag_end, frame_end, "<target", "</target>",
                              item->target, sizeof(item->target));
                 text_between(frame_tag_end, frame_end, "<str", "</str>",
                              item->text, sizeof(item->text));
                 text_between(frame_tag_end, frame_end, "<lang", "</lang>",
                              item->lang, sizeof(item->lang));
+                if (!first_imported) first_imported = id;
                 imported++;
             }
         }
         cursor = frame_end + strlen("</frame>");
     }
-    staged->frame_id = imported ? 1 : 3;
+    staged->frame_id = first_imported ? first_imported : 3;
     if (staged->frame_id > lad_template_frame_count(style))
         staged->frame_id = lad_template_frame_count(style);
     DesignerFrame active = staged->frames[style][staged->frame_id - 1];
@@ -411,17 +442,20 @@ bool lad_write_modified_vpk(const char *source, const DesignerConfig *cfg,
     }
     const int count = lad_template_frame_count(cfg->template_style);
     for (int id = 1; success && id <= count; id++) {
+        DesignerFrame item;
+        lad_resolve_frame(cfg, id, &item);
+        if (!lad_include_frame(cfg, &item)) continue;
         char out[600], in[600];
         snprintf(out, sizeof(out), CONTENTS "frame%d.png", id);
         snprintf(in, sizeof(in), "%sframe%d.png", base, id);
         if (!replace_entry(archive, out, in)) success = 0;
     }
-    const struct { const char *source; const char *entry; } optional[] = {
-        { cfg->icon_image, "sce_sys/icon0.png" },
-        { cfg->boot_image, "sce_sys/pic0.png" }
+    const struct { bool present; const char *entry; } optional[] = {
+        { cfg->icon_image[0] || cfg->artwork[LAD_ART_ICON].solid, "sce_sys/icon0.png" },
+        { cfg->boot_image[0] || cfg->artwork[LAD_ART_BOOT].solid, "sce_sys/pic0.png" }
     };
     for (unsigned int i = 0; success && i < 2; i++) {
-        if (!optional[i].source[0]) continue;
+        if (!optional[i].present) continue;
         char path[600];
         snprintf(path, sizeof(path), LAD_EXPORT_DIR "/%s", optional[i].entry);
         if (!replace_entry(archive, optional[i].entry, path)) success = 0;

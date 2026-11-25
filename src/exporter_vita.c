@@ -1,11 +1,11 @@
 #include "exporter.h"
+#include "artwork.h"
 #include "template_slots.h"
 #include "quantize.h"
 #include "png_passthrough.h"
 #include "png_lossless.h"
 
 #include <SDL.h>
-#include <SDL_image.h>
 #include <png.h>
 #include <zlib.h>
 #include <psp2/io/dirent.h>
@@ -15,7 +15,6 @@
 #include <string.h>
 
 #define CONTENTS_DIR LAD_EXPORT_DIR "/sce_sys/livearea/contents"
-#define MAX_SOURCE_EDGE 2048
 /* Real stock firmware on a retail Vita uses indexed bg0.png up to 369,340 B.
    Allow such content rather than forcing it below the previous 128 KiB cap. */
 #define BG0_PNG_LIMIT (384 * 1024)
@@ -129,40 +128,24 @@ cleanup:
 
 static bool export_picture(const char *source, const char *output,
                            int width, int height, SDL_Color color, bool transparent,
-                           bool lossless_frame1) {
+                           bool lossless_frame1, const LadArtwork *art) {
     const char *basename = strrchr(output, '/');
     basename = basename ? basename + 1 : output;
-    if (!transparent && strcmp(basename, "bg0.png") == 0 &&
+    if (!lad_artwork_edited(art) && !transparent && strcmp(basename, "bg0.png") == 0 &&
         lad_copy_opaque_indexed_png(source, output, width, height, BG0_PNG_LIMIT))
         return true;
-    if (lossless_frame1 &&
+    if (!lad_artwork_edited(art) && lossless_frame1 &&
         lad_copy_frame_png(source, output, width, height, transparent))
         return true;
 
-    SDL_Surface *dst = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32,
-                                                     SDL_PIXELFORMAT_RGBA32);
-    if (!dst) return false;
-    Uint32 fill = transparent ? 0 : SDL_MapRGBA(dst->format, color.r, color.g, color.b, 255);
-    SDL_FillRect(dst, NULL, fill);
-    if (source && source[0]) {
-        SDL_Surface *image = IMG_Load(source);
-        if (!image || image->w <= 0 || image->h <= 0 ||
-            image->w > MAX_SOURCE_EDGE || image->h > MAX_SOURCE_EDGE) {
-            SDL_FreeSurface(image);
-            SDL_FreeSurface(dst);
-            return false;
-        }
-        /* When exporting transparent frame1, keep straight RGBA instead of
-           blending premultiplied RGB against the empty destination. */
-        SDL_SetSurfaceBlendMode(image, transparent && lossless_frame1 ?
-                                SDL_BLENDMODE_NONE : SDL_BLENDMODE_BLEND);
-        if (SDL_BlitScaled(image, NULL, dst, NULL) < 0) {
-            SDL_FreeSurface(image);
-            SDL_FreeSurface(dst);
-            return false;
-        }
-        SDL_FreeSurface(image);
+    SDL_Surface *image = NULL;
+    if (!art->solid && source && source[0]) {
+        image = lad_artwork_load(source);
+        if (!image) return false;
     }
+    SDL_Surface *dst = lad_artwork_render(image, art, width, height, color, transparent);
+    SDL_FreeSurface(image);
+    if (!dst) return false;
     if (lossless_frame1) {
         uint8_t *rgba = surface_rgba(dst);
         bool ok = rgba && lad_write_truecolor_png(rgba, width, height,
@@ -236,7 +219,8 @@ static bool export_manual_pages(const DesignerConfig *cfg) {
         const char *slash = cfg->manual_dir[strlen(cfg->manual_dir) - 1] == '/' ? "" : "/";
         snprintf(from, sizeof(from), "%s%s%s", cfg->manual_dir, slash, names[i]);
         snprintf(to, sizeof(to), LAD_EXPORT_DIR "/sce_sys/manual/%03d.png", i + 1);
-        if (!export_picture(from, to, 960, 544, palette[8], false, false)) return false;
+        if (!export_picture(from, to, 960, 544, palette[8], false, false, &(LadArtwork){0}))
+            return false;
     }
     return true;
 }
@@ -259,14 +243,14 @@ bool lad_export_bundle(const DesignerConfig *cfg, char *error, size_t size) {
 
     snprintf(filename, sizeof(filename), "%s/bg0.png", CONTENTS_DIR);
     if (!export_picture(cfg->card_image, filename, 840, 500,
-                        palette[cfg->card_color], false, false)) {
+                        palette[cfg->card_color], false, false, &cfg->artwork[LAD_ART_CARD])) {
         set_error(error, size, "BG0.PNG EXPORT FAILED"); return false;
     }
 
     snprintf(filename, sizeof(filename), "%s/startup.png", CONTENTS_DIR);
     if (lad_template_layout(cfg->template_style)->has_gate) {
         if (!export_picture(cfg->gate_image, filename, 280, 158,
-                            palette[cfg->button_color], true, false)) {
+                            palette[cfg->button_color], true, false, &cfg->artwork[LAD_ART_GATE])) {
             set_error(error, size, "STARTUP.PNG EXPORT FAILED"); return false;
         }
     } else {
@@ -280,26 +264,36 @@ bool lad_export_bundle(const DesignerConfig *cfg, char *error, size_t size) {
         DesignerFrame item;
         lad_resolve_frame(cfg, frame, &item);
         snprintf(filename, sizeof(filename), "%s/frame%d.png", CONTENTS_DIR, frame);
+        if (!lad_include_frame(cfg, &item)) {
+            remove(filename);
+            continue;
+        }
         const int color = item.button_color >= 0 && item.button_color < LAD_PALETTE_COUNT
             ? item.button_color : 1;
         if (!export_picture(item.image, filename, item.w, item.h,
                             palette[color], item.transparent_button != 0,
-                            frame == 1)) {
+                            frame == 1, &item.artwork)) {
             set_error(error, size, "FRAME PNG EXPORT FAILED"); return false;
         }
     }
 
-    if (cfg->icon_image[0]) {
-        snprintf(filename, sizeof(filename), "%s/sce_sys/icon0.png", LAD_EXPORT_DIR);
-        if (!export_picture(cfg->icon_image, filename, 128, 128, palette[8], false, false)) {
+    snprintf(filename, sizeof(filename), "%s/sce_sys/icon0.png", LAD_EXPORT_DIR);
+    if (cfg->icon_image[0] || cfg->artwork[LAD_ART_ICON].solid) {
+        if (!export_picture(cfg->icon_image, filename, 128, 128, palette[8],
+                            false, false, &cfg->artwork[LAD_ART_ICON])) {
             set_error(error, size, "ICON0.PNG EXPORT FAILED"); return false;
         }
+    } else {
+        remove(filename);
     }
-    if (cfg->boot_image[0]) {
-        snprintf(filename, sizeof(filename), "%s/sce_sys/pic0.png", LAD_EXPORT_DIR);
-        if (!export_picture(cfg->boot_image, filename, 960, 544, palette[8], false, false)) {
+    snprintf(filename, sizeof(filename), "%s/sce_sys/pic0.png", LAD_EXPORT_DIR);
+    if (cfg->boot_image[0] || cfg->artwork[LAD_ART_BOOT].solid) {
+        if (!export_picture(cfg->boot_image, filename, 960, 544, palette[8],
+                            false, false, &cfg->artwork[LAD_ART_BOOT])) {
             set_error(error, size, "PIC0.PNG EXPORT FAILED"); return false;
         }
+    } else {
+        remove(filename);
     }
     if (!export_manual_pages(cfg)) {
         set_error(error, size, "MANUAL PAGES EXPORT FAILED"); return false;
